@@ -34,7 +34,13 @@ ondevice-ai-civil-complaint/
 ├── docs/                    # 프로젝트 문서
 │   ├── draft.md            # 문제정의서
 │   ├── toc.md              # 제안서 작성 가이드
-│   └── prd.md              # PRD (Product Requirements Document)
+│   ├── prd.md              # PRD (Product Requirements Document)
+│   ├── wbs.md              # WBS (Work Breakdown Structure)
+│   └── outputs/            # 마일스톤별 산출물
+│       ├── M1_Planning/
+│       ├── M2_MVP/
+│       ├── M3_Optimization/
+│       └── M4_Testing/
 ├── notebooks/              # 실험 노트북
 └── tests/                  # 테스트 코드
 ```
