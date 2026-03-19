@@ -59,12 +59,39 @@ jobs:
           echo "=== DORA Metrics Collection: $NOW ==="
           echo "=== Analysis Window: last ${WINDOW_DAYS} days ==="
 
-          # -------------------------------------------------------
-          # 수집 대상 브랜치 결정
-          # develop PR 기준으로 메트릭 수집 (팀 실제 워크플로 반영)
-          # main은 프로덕션 배포용으로 별도 라벨링
-          # -------------------------------------------------------
-          BRANCHES=("develop" "main")
+          DEV_BRANCH_EXISTS=false
+          if git show-ref --verify --quiet refs/remotes/origin/develop; then
+            DEV_BRANCH_EXISTS=true
+          fi
+
+          PRIMARY_BRANCH="main"
+          BRANCHES=("main")
+          if [ "$DEV_BRANCH_EXISTS" = true ]; then
+            PRIMARY_BRANCH="develop"
+            BRANCHES=("develop" "main")
+          fi
+
+          DEV_DEPLOYS_WEEK=0
+          DEV_DEPLOYS_WINDOW=0
+          DEV_DEPLOYS_PER_WEEK="0.00"
+          DEV_LEAD_TIME=0
+          DEV_LEAD_HOURS="0.0"
+          DEV_LEAD_COUNT=0
+          DEV_CFR="0.0"
+          DEV_FAILURE_COMMITS=0
+          DEV_TOTAL_COMMITS=0
+          DEV_MTTR=0
+          DEV_MTTR_HOURS="0.0"
+          DEV_MTTR_COUNT=0
+          MAIN_DEPLOYS_WEEK=0
+          MAIN_DEPLOYS_WINDOW=0
+          MAIN_DEPLOYS_PER_WEEK="0.00"
+          MAIN_LEAD_TIME=0
+          MAIN_LEAD_HOURS="0.0"
+          MAIN_LEAD_COUNT=0
+          MAIN_CFR="0.0"
+          MAIN_FAILURE_COMMITS=0
+          MAIN_TOTAL_COMMITS=0
 
           for TARGET_BRANCH in "${BRANCHES[@]}"; do
             echo ""
@@ -187,7 +214,7 @@ jobs:
             # -------------------------------------------------------
             # 브랜치별 변수 저장 (GitHub Actions 출력 및 후속 단계용)
             # -------------------------------------------------------
-            if [ "$TARGET_BRANCH" = "develop" ]; then
+            if [ "$TARGET_BRANCH" = "$PRIMARY_BRANCH" ]; then
               DEV_DEPLOYS_WEEK=$DEPLOYS_WEEK
               DEV_DEPLOYS_WINDOW=$DEPLOYS_WINDOW
               DEV_DEPLOYS_PER_WEEK=$DEPLOYS_PER_WEEK
@@ -214,7 +241,7 @@ jobs:
           done
 
           # -------------------------------------------------------
-          # DORA 등급 판정 (develop 브랜치 기준 - 팀 실제 워크플로 반영)
+          # DORA 등급 판정 (primary 브랜치 기준)
           # -------------------------------------------------------
           if [ "$(echo "$DEV_DEPLOYS_PER_WEEK >= 1" | bc)" -eq 1 ] && \
              [ "$(echo "$DEV_LEAD_HOURS < 24" | bc)" -eq 1 ]; then
@@ -228,7 +255,7 @@ jobs:
           fi
 
           echo ""
-          echo "========== DORA 등급: $GRADE (develop 기준) =========="
+          echo "========== DORA 등급: $GRADE (${PRIMARY_BRANCH} 기준) =========="
 
           # -------------------------------------------------------
           # JSON 아티팩트 저장 (develop + main 브랜치 모두 포함)
@@ -242,7 +269,7 @@ jobs:
             'window_days': $WINDOW_DAYS_INT,
             'period': 'last_${WINDOW_DAYS}_days',
             'grade': '$GRADE',
-            'primary_branch': 'develop',
+            'primary_branch': '$PRIMARY_BRANCH',
             'develop': {
               'deployment_frequency': {
                 'weekly': $DEV_DEPLOYS_WEEK,
@@ -290,7 +317,7 @@ jobs:
           print(f'JSON 저장: $FILENAME')
           "
 
-          # GitHub Actions 출력 (develop 기준 - primary)
+          # GitHub Actions 출력 (primary 브랜치 기준)
           {
             echo "deploys_week=$DEV_DEPLOYS_WEEK"
             echo "deploys_window=$DEV_DEPLOYS_WINDOW"
@@ -300,6 +327,7 @@ jobs:
             echo "cfr=$DEV_CFR"
             echo "mttr_hours=$DEV_MTTR_HOURS"
             echo "grade=$GRADE"
+            echo "primary_branch=$PRIMARY_BRANCH"
             echo "filename=$FILENAME"
             echo "window_days=$WINDOW_DAYS"
             echo "main_deploys_week=$MAIN_DEPLOYS_WEEK"
@@ -319,6 +347,7 @@ jobs:
           CFR: ${{ steps.dora.outputs.cfr }}
           MTTR: ${{ steps.dora.outputs.mttr_hours }}
           GRADE: ${{ steps.dora.outputs.grade }}
+          PRIMARY_BRANCH: ${{ steps.dora.outputs.primary_branch }}
           WINDOW_DAYS: ${{ steps.dora.outputs.window_days }}
           MAIN_DEPLOYS_WEEK: ${{ steps.dora.outputs.main_deploys_week }}
           MAIN_DEPLOYS_WINDOW: ${{ steps.dora.outputs.main_deploys_window }}
@@ -331,7 +360,7 @@ jobs:
 
           - 분석 기간: 최근 ${WINDOW_DAYS}일
 
-          ### develop 브랜치 (Primary - 팀 워크플로 기준)
+          ### ${PRIMARY_BRANCH} 브랜치 (Primary)
           | 지표 | 값 | 등급 기준 |
           |------|-----|----------|
           | **배포 빈도** | 최근 7일 ${DEPLOYS_WEEK}건 / 최근 ${WINDOW_DAYS}일 ${DEPLOYS_WINDOW}건 / 주 평균 ${DEPLOYS_PER_WEEK}건 | Elite: 일 1회+ |
@@ -349,6 +378,7 @@ jobs:
           | **변경 실패율** | ${MAIN_CFR}% |
 
           > 리드 타임 측정 방식: PR의 첫 커밋 시점 → 머지 시점 (실제 개발 시작 반영)
+          > primary 브랜치: ${PRIMARY_BRANCH}
           EOF
 
       - name: Commit metrics data
