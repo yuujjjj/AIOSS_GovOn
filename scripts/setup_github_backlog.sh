@@ -22,12 +22,7 @@ ensure_label() {
   local name="$1"
   local color="$2"
   local description="$3"
-
-  if gh label list --repo "$REPO" --limit 200 --json name --jq '.[].name' | grep -Fxq "$name"; then
-    gh label edit "$name" --repo "$REPO" --color "$color" --description "$description" >/dev/null
-  else
-    gh label create "$name" --repo "$REPO" --color "$color" --description "$description" >/dev/null
-  fi
+  gh label create "$name" --repo "$REPO" --color "$color" --description "$description" --force >/dev/null
 }
 
 ensure_milestone() {
@@ -46,11 +41,6 @@ ensure_milestone() {
     -f due_on="$due_on" >/dev/null
 }
 
-get_milestone_number() {
-  local title="$1"
-  gh api "repos/${REPO}/milestones" --paginate --jq ".[] | select(.title == \"${title}\") | .number" | head -n 1
-}
-
 ensure_issue() {
   local title="$1"
   local milestone_title="$2"
@@ -65,15 +55,12 @@ ensure_issue() {
     return
   fi
 
-  local milestone_number
-  milestone_number="$(get_milestone_number "$milestone_title")"
-
   gh issue create \
     --repo "$REPO" \
     --title "$title" \
     --body "$body" \
     --label "$labels_csv" \
-    --milestone "$milestone_number" >/dev/null
+    --milestone "$milestone_title" >/dev/null
 
   echo "Created issue: ${title}"
 }
