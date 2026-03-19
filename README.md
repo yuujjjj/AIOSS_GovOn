@@ -119,8 +119,7 @@ pip install -r requirements.txt
 
 ## 브랜치 전략
 
-- `main`: 프로덕션 브랜치 (직접 push 금지, PR을 통해서만 머지)
-- `develop`: 개발 브랜치
+- `main`: 프로덕션 브랜치 
 - `feature/*`: 기능 개발 브랜치
 - `fix/*`: 버그 수정 브랜치
 
