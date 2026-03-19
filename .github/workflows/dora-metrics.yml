@@ -6,6 +6,19 @@ on:
     - cron: '0 0 * * 1'
   # 수동 실행
   workflow_dispatch:
+    inputs:
+      collect_enabled:
+        description: "DORA 메트릭 수집 실행 여부"
+        required: true
+        default: "true"
+      publish_to_grafana:
+        description: "Grafana Cloud 전송 여부"
+        required: true
+        default: "true"
+      window_days:
+        description: "분석 기간 (일)"
+        required: true
+        default: "30"
   # main/develop 머지 시에도 실행 (배포 빈도 실시간 반영)
   push:
     branches: [main, develop]
@@ -17,6 +30,7 @@ permissions:
 
 jobs:
   collect-dora-metrics:
+    if: github.event_name != 'workflow_dispatch' || github.event.inputs.collect_enabled == 'true'
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -32,15 +46,17 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
+          WINDOW_DAYS: ${{ github.event.inputs.window_days || '30' }}
         shell: bash
         run: |
           set -euo pipefail
 
           NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           WEEK_AGO=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)
-          MONTH_AGO=$(date -u -d '30 days ago' +%Y-%m-%dT%H:%M:%SZ)
+          MONTH_AGO=$(date -u -d "${WINDOW_DAYS} days ago" +%Y-%m-%dT%H:%M:%SZ)
 
           echo "=== DORA Metrics Collection: $NOW ==="
+          echo "=== Analysis Window: last ${WINDOW_DAYS} days ==="
 
           # -------------------------------------------------------
           # 수집 대상 브랜치 결정
@@ -222,7 +238,7 @@ jobs:
           import json, sys
           data = {
             'timestamp': '$NOW',
-            'period': 'last_30_days',
+            'period': 'last_${WINDOW_DAYS}_days',
             'grade': '$GRADE',
             'primary_branch': 'develop',
             'develop': {
@@ -282,6 +298,7 @@ jobs:
             echo "mttr_hours=$DEV_MTTR_HOURS"
             echo "grade=$GRADE"
             echo "filename=$FILENAME"
+            echo "window_days=$WINDOW_DAYS"
             echo "main_deploys_week=$MAIN_DEPLOYS_WEEK"
             echo "main_deploys_month=$MAIN_DEPLOYS_MONTH"
             echo "main_lead_time_hours=$MAIN_LEAD_HOURS"
@@ -297,6 +314,7 @@ jobs:
           CFR: ${{ steps.dora.outputs.cfr }}
           MTTR: ${{ steps.dora.outputs.mttr_hours }}
           GRADE: ${{ steps.dora.outputs.grade }}
+          WINDOW_DAYS: ${{ steps.dora.outputs.window_days }}
           MAIN_DEPLOYS_WEEK: ${{ steps.dora.outputs.main_deploys_week }}
           MAIN_DEPLOYS_MONTH: ${{ steps.dora.outputs.main_deploys_month }}
           MAIN_LEAD_TIME: ${{ steps.dora.outputs.main_lead_time_hours }}
@@ -304,6 +322,8 @@ jobs:
         run: |
           cat >> $GITHUB_STEP_SUMMARY << EOF
           ## DORA Metrics Report
+
+          - 분석 기간: 최근 ${WINDOW_DAYS}일
 
           ### develop 브랜치 (Primary - 팀 워크플로 기준)
           | 지표 | 값 | 등급 기준 |
@@ -334,7 +354,7 @@ jobs:
           git push || echo "No changes to push"
 
       - name: Push to Grafana Cloud
-        if: env.GRAFANA_CLOUD_URL != ''
+        if: env.GRAFANA_CLOUD_URL != '' && (github.event_name != 'workflow_dispatch' || github.event.inputs.publish_to_grafana != 'false')
         env:
           GRAFANA_CLOUD_URL: ${{ secrets.GRAFANA_CLOUD_URL }}
           GRAFANA_CLOUD_USER: ${{ secrets.GRAFANA_CLOUD_USER }}

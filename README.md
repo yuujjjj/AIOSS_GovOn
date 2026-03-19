@@ -67,6 +67,41 @@ GovOn/
 
 > 데이터 수집: GitHub Actions 자동 실행 (매주 월요일 + main push)
 
+### 실행 방법
+
+이 저장소는 `.github/workflows/dora-metrics.yml`에서 DORA 메트릭을 자동 수집합니다.
+
+#### 자동 실행
+
+- 매주 월요일 09:00 KST
+- `main`, `develop` 브랜치 push 시
+
+#### 수동 실행
+
+1. GitHub 저장소의 **Actions** 탭으로 이동
+2. **DORA Metrics Collector** 워크플로우 선택
+3. **Run workflow** 클릭
+4. 아래 입력값 지정
+   - `collect_enabled`: 수집 실행 여부 (`true` / `false`)
+   - `publish_to_grafana`: Grafana Cloud 전송 여부 (`true` / `false`)
+   - `window_days`: 분석 기간 (기본 `30`)
+
+#### 결과 확인
+
+- 수집 JSON: `metrics/dora/dora-YYYYMMDD.json`
+- 워크플로우 요약: GitHub Actions Step Summary
+- 시각화: 공개 Grafana 대시보드 링크
+
+#### README 이미지 첨부 방법
+
+1. Grafana 대시보드를 연다.
+2. 화면을 캡처해 `docs/images/dora-dashboard.png`로 저장한다.
+3. 아래 마크다운을 README에 추가한다.
+
+```md
+![DORA Dashboard](docs/images/dora-dashboard.png)
+```
+
 ## 개발 환경 설정
 
 ```bash
