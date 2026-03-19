@@ -96,6 +96,9 @@ jobs:
           for TARGET_BRANCH in "${BRANCHES[@]}"; do
             echo ""
             echo "========== [$TARGET_BRANCH] 브랜치 메트릭 수집 =========="
+            AVG_MTTR=0
+            AVG_MTTR_HOURS="0.0"
+            MTTR_TIMES=()
 
             # -------------------------------------------------------
             # 1. Deployment Frequency (배포 빈도)
