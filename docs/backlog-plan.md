@@ -39,6 +39,7 @@ AIOSS_GovOn 저장소의 스프린트 운영을 위한 백로그 초안이다.
 - `status:blocked`
 - `status:ready`
 - `status:investigating`
+- `status:done`
 
 ### Size
 
