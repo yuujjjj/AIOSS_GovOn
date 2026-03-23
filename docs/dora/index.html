@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AIOSS_GovOn DORA Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg: #f4efe7;
+      --panel: rgba(255, 252, 247, 0.92);
+      --ink: #1d2a2a;
+      --muted: #5e6a68;
+      --line: rgba(29, 42, 42, 0.12);
+      --lead: #115e59;
+      --deploy: #b45309;
+      --mttr: #1d4ed8;
+      --cfr: #b91c1c;
+      --accent: #1f2937;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Pretendard", "Apple SD Gothic Neo", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(17, 94, 89, 0.18), transparent 34%),
+        radial-gradient(circle at top right, rgba(180, 83, 9, 0.18), transparent 28%),
+        linear-gradient(180deg, #f7f1e9, #efe7dc);
+    }
+
+    .shell {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 40px 20px 56px;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 20px;
+      align-items: stretch;
+      margin-bottom: 22px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      box-shadow: 0 16px 50px rgba(59, 47, 31, 0.08);
+      backdrop-filter: blur(10px);
+    }
+
+    .hero-copy {
+      padding: 28px;
+    }
+
+    .eyebrow {
+      display: inline-block;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(17, 94, 89, 0.1);
+      color: var(--lead);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    h1 {
+      margin: 16px 0 10px;
+      font-size: clamp(32px, 5vw, 54px);
+      line-height: 1.02;
+      letter-spacing: -0.04em;
+    }
+
+    .hero-copy p,
+    .hero-meta {
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .hero-meta {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 18px;
+      font-size: 14px;
+    }
+
+    .hero-score {
+      padding: 28px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 220px;
+      background: linear-gradient(160deg, rgba(29, 42, 42, 0.96), rgba(17, 94, 89, 0.92));
+      color: #f8fafc;
+    }
+
+    .hero-score .label {
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      opacity: 0.74;
+    }
+
+    .hero-score .value {
+      font-size: clamp(44px, 8vw, 72px);
+      line-height: 1;
+      font-weight: 800;
+      letter-spacing: -0.06em;
+      margin: 10px 0 8px;
+    }
+
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    .kpi {
+      padding: 20px;
+    }
+
+    .kpi h2 {
+      margin: 0 0 10px;
+      font-size: 14px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .kpi .metric {
+      font-size: 34px;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      margin-bottom: 6px;
+    }
+
+    .kpi p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .charts {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .chart-panel {
+      padding: 20px;
+      min-height: 300px;
+    }
+
+    .chart-panel h3 {
+      margin: 0 0 8px;
+      font-size: 18px;
+      letter-spacing: -0.02em;
+    }
+
+    .chart-panel p {
+      margin: 0 0 16px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .footer-note {
+      margin-top: 18px;
+      padding: 18px 20px;
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    canvas {
+      width: 100% !important;
+      height: 220px !important;
+    }
+
+    @media (max-width: 960px) {
+      .hero,
+      .kpis,
+      .charts {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div class="panel hero-copy">
+        <span class="eyebrow">Chart.js Dashboard</span>
+        <h1>AIOSS_GovOn<br>DORA Metrics Dashboard</h1>
+        <p>GitHub Actions가 수집한 DORA 4대 지표를 정적 대시보드로 시각화한 구현 결과입니다. 저장소 내부 JSON 데이터를 직접 읽기 때문에 외부 대시보드 서비스 상태와 무관하게 제출 근거를 남길 수 있습니다.</p>
+        <div class="hero-meta" id="hero-meta"></div>
+      </div>
+      <div class="panel hero-score">
+        <div>
+          <div class="label">Current Grade</div>
+          <div class="value" id="grade-value">-</div>
+          <div id="grade-caption">최신 수집 결과를 불러오는 중입니다.</div>
+        </div>
+        <div class="label" id="generated-at">generated_at</div>
+      </div>
+    </section>
+
+    <section class="kpis">
+      <article class="panel kpi">
+        <h2>Lead Time</h2>
+        <div class="metric" id="lead-time-card">-</div>
+        <p>PR의 첫 커밋 시점부터 merge 시점까지의 평균 시간</p>
+      </article>
+      <article class="panel kpi">
+        <h2>Deployment Frequency</h2>
+        <div class="metric" id="deploy-card">-</div>
+        <p>분석 기간 기준 배포 빈도를 주 단위로 환산한 값</p>
+      </article>
+      <article class="panel kpi">
+        <h2>MTTR</h2>
+        <div class="metric" id="mttr-card">-</div>
+        <p>bug 이슈 open → close 평균 시간</p>
+      </article>
+      <article class="panel kpi">
+        <h2>Change Failure Rate</h2>
+        <div class="metric" id="cfr-card">-</div>
+        <p>hotfix/revert 계열 커밋 비율</p>
+      </article>
+    </section>
+
+    <section class="charts">
+      <article class="panel chart-panel">
+        <h3>Lead Time Trend</h3>
+        <p>시간 단위 평균 리드 타임 변화</p>
+        <canvas id="leadChart"></canvas>
+      </article>
+      <article class="panel chart-panel">
+        <h3>Deployment Frequency Trend</h3>
+        <p>주 평균 배포 빈도 변화</p>
+        <canvas id="deployChart"></canvas>
+      </article>
+      <article class="panel chart-panel">
+        <h3>MTTR Trend</h3>
+        <p>복구 시간 평균 변화</p>
+        <canvas id="mttrChart"></canvas>
+      </article>
+      <article class="panel chart-panel">
+        <h3>Change Failure Rate Trend</h3>
+        <p>변경 실패율 추이</p>
+        <canvas id="cfrChart"></canvas>
+      </article>
+    </section>
+
+    <section class="panel footer-note">
+      데이터 소스: <code>metrics/dora/*.json</code>에서 정리한 <code>docs/dora/history.json</code><br>
+      최신 primary 브랜치 기준 수치와 과거 추이를 함께 표시합니다.
+    </section>
+  </main>
+
+  <script>
+    async function loadDashboard() {
+      const response = await fetch('./history.json');
+      const history = await response.json();
+      const entries = history.entries || [];
+      const latest = entries[entries.length - 1];
+
+      const heroMeta = document.getElementById('hero-meta');
+      heroMeta.innerHTML = `
+        <div><strong>Primary Branch</strong><br>${latest.primary_branch}</div>
+        <div><strong>Window</strong><br>Last ${latest.window_days} days</div>
+        <div><strong>Window Total Deploys</strong><br>${latest.deployment_frequency_window_total}</div>
+        <div><strong>Snapshot Date</strong><br>${latest.date}</div>
+      `;
+
+      document.getElementById('grade-value').textContent = latest.grade;
+      document.getElementById('grade-caption').textContent =
+        `Primary branch: ${latest.primary_branch} · Window: ${latest.window_days} days`;
+      document.getElementById('generated-at').textContent =
+        `updated ${new Date(history.generated_at).toLocaleString('ko-KR')}`;
+
+      document.getElementById('lead-time-card').textContent = `${latest.lead_time_hours.toFixed(1)}h`;
+      document.getElementById('deploy-card').textContent = `${latest.deployment_frequency_per_week.toFixed(2)}/wk`;
+      document.getElementById('mttr-card').textContent = `${latest.mttr_hours.toFixed(1)}h`;
+      document.getElementById('cfr-card').textContent = `${latest.change_failure_rate.toFixed(1)}%`;
+
+      const labels = entries.map((entry) => entry.date);
+      const commonOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false }
+        },
+        scales: {
+          x: {
+            grid: { color: 'rgba(29, 42, 42, 0.08)' },
+            ticks: { color: '#5e6a68' }
+          },
+          y: {
+            grid: { color: 'rgba(29, 42, 42, 0.08)' },
+            ticks: { color: '#5e6a68' }
+          }
+        }
+      };
+
+      new Chart(document.getElementById('leadChart'), {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            data: entries.map((entry) => entry.lead_time_hours),
+            borderColor: '#115e59',
+            backgroundColor: 'rgba(17, 94, 89, 0.18)',
+            fill: true,
+            tension: 0.3
+          }]
+        },
+        options: commonOptions
+      });
+
+      new Chart(document.getElementById('deployChart'), {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{
+            data: entries.map((entry) => entry.deployment_frequency_per_week),
+            backgroundColor: 'rgba(180, 83, 9, 0.72)',
+            borderRadius: 10
+          }]
+        },
+        options: commonOptions
+      });
+
+      new Chart(document.getElementById('mttrChart'), {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            data: entries.map((entry) => entry.mttr_hours),
+            borderColor: '#1d4ed8',
+            backgroundColor: 'rgba(29, 78, 216, 0.16)',
+            fill: true,
+            tension: 0.3
+          }]
+        },
+        options: commonOptions
+      });
+
+      new Chart(document.getElementById('cfrChart'), {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            data: entries.map((entry) => entry.change_failure_rate),
+            borderColor: '#b91c1c',
+            backgroundColor: 'rgba(185, 28, 28, 0.14)',
+            fill: true,
+            tension: 0.3
+          }]
+        },
+        options: commonOptions
+      });
+    }
+
+    loadDashboard().catch((error) => {
+      document.body.innerHTML = `<main class="shell"><section class="panel hero-copy"><h1>Dashboard Load Failed</h1><p>${error.message}</p></section></main>`;
+    });
+  </script>
+</body>
+</html>

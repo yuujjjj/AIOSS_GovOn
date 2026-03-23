@@ -54,15 +54,19 @@ GovOn/
 
 ## DORA Metrics 대시보드
 
-프로젝트의 DevOps 성숙도를 DORA 4대 지표로 측정하고 Grafana Cloud에서 실시간 모니터링합니다.
+프로젝트의 DevOps 성숙도를 DORA 4대 지표로 측정하고 GitHub Actions로 자동 수집합니다. 제출용 결과물은 저장소 내부의 Chart.js 대시보드와 이미지로 함께 제공합니다.
 
-**[DORA Metrics Dashboard (공개 링크)](https://umyunsang.grafana.net/public-dashboards/a7672d6682fb498eb4578a8634262280)**
+- Chart.js 구현 파일: [docs/dora/index.html](docs/dora/index.html)
+- 시계열 데이터: [docs/dora/history.json](docs/dora/history.json)
+- Grafana 공개 링크(선택): [DORA Metrics Dashboard](https://umyunsang.grafana.net/public-dashboards/a7672d6682fb498eb4578a8634262280)
+
+![DORA Dashboard Preview](docs/images/dora-dashboard.svg)
 
 | 지표 | 설명 |
 |------|------|
-| 배포 빈도 | main 브랜치 머지 PR 수 / 주 |
-| 리드 타임 | PR 생성 → 머지 평균 시간 |
-| 변경 실패율 | hotfix/revert 커밋 비율 |
+| 배포 빈도 | 분석 기간 내 merge된 PR 수를 주 단위로 환산 |
+| 리드 타임 | PR의 첫 커밋 → 머지 평균 시간 |
+| 변경 실패율 | hotfix/revert 계열 커밋 비율 |
 | MTTR | bug 이슈 open → close 평균 시간 |
 
 > 데이터 수집: GitHub Actions 자동 실행 (매주 월요일 + main push)
@@ -95,11 +99,11 @@ GovOn/
 #### README 이미지 첨부 방법
 
 1. Grafana 대시보드를 연다.
-2. 화면을 캡처해 `docs/images/dora-dashboard.png`로 저장한다.
+2. 화면을 캡처해 `docs/images/dora-dashboard.png` 또는 `docs/images/dora-dashboard.svg`로 저장한다.
 3. 아래 마크다운을 README에 추가한다.
 
 ```md
-![DORA Dashboard](docs/images/dora-dashboard.png)
+![DORA Dashboard](docs/images/dora-dashboard.svg)
 ```
 
 ## 개발 환경 설정

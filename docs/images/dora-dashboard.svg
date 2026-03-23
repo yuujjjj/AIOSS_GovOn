@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="880" viewBox="0 0 1400 880" fill="none">
+  <rect width="1400" height="880" fill="#F4EFE7"/>
+  <circle cx="154" cy="130" r="190" fill="#115E59" fill-opacity="0.14"/>
+  <circle cx="1228" cy="98" r="170" fill="#B45309" fill-opacity="0.16"/>
+  <rect x="48" y="42" width="820" height="214" rx="28" fill="#FFFCF7" fill-opacity="0.94" stroke="#D9CFC1"/>
+  <rect x="892" y="42" width="460" height="214" rx="28" fill="#173B3B"/>
+  <text x="86" y="88" fill="#115E59" font-family="Arial, sans-serif" font-size="20" font-weight="700">Chart.js Dashboard</text>
+  <text x="86" y="146" fill="#1D2A2A" font-family="Arial, sans-serif" font-size="54" font-weight="800">AIOSS_GovOn</text>
+  <text x="86" y="202" fill="#1D2A2A" font-family="Arial, sans-serif" font-size="54" font-weight="800">DORA Metrics Dashboard</text>
+  <text x="86" y="234" fill="#5E6A68" font-family="Arial, sans-serif" font-size="22">GitHub Actions가 수집한 DORA 4대 지표를 정적 대시보드로 시각화한 구현 결과</text>
+  <text x="930" y="92" fill="#D5F3EE" font-family="Arial, sans-serif" font-size="20">Current Grade</text>
+  <text x="930" y="188" fill="#FFFFFF" font-family="Arial, sans-serif" font-size="86" font-weight="800">Low</text>
+  <text x="930" y="228" fill="#CFE7E3" font-family="Arial, sans-serif" font-size="22">Primary branch: main · Last 30 days</text>
+
+  <g font-family="Arial, sans-serif">
+    <rect x="48" y="280" width="318" height="144" rx="24" fill="#FFFCF7" fill-opacity="0.94" stroke="#D9CFC1"/>
+    <text x="76" y="324" fill="#5E6A68" font-size="22">Lead Time</text>
+    <text x="76" y="386" fill="#1D2A2A" font-size="56" font-weight="800">0.0h</text>
+    <text x="76" y="408" fill="#5E6A68" font-size="18">PR first commit → merge average</text>
+
+    <rect x="382" y="280" width="318" height="144" rx="24" fill="#FFFCF7" fill-opacity="0.94" stroke="#D9CFC1"/>
+    <text x="410" y="324" fill="#5E6A68" font-size="22">Deployment Frequency</text>
+    <text x="410" y="386" fill="#1D2A2A" font-size="56" font-weight="800">0.00/wk</text>
+    <text x="410" y="408" fill="#5E6A68" font-size="18">Window total deploys: 0</text>
+
+    <rect x="716" y="280" width="318" height="144" rx="24" fill="#FFFCF7" fill-opacity="0.94" stroke="#D9CFC1"/>
+    <text x="744" y="324" fill="#5E6A68" font-size="22">MTTR</text>
+    <text x="744" y="386" fill="#1D2A2A" font-size="56" font-weight="800">0.0h</text>
+    <text x="744" y="408" fill="#5E6A68" font-size="18">bug issue open → close average</text>
+
+    <rect x="1050" y="280" width="302" height="144" rx="24" fill="#FFFCF7" fill-opacity="0.94" stroke="#D9CFC1"/>
+    <text x="1078" y="324" fill="#5E6A68" font-size="22">Change Failure Rate</text>
+    <text x="1078" y="386" fill="#1D2A2A" font-size="56" font-weight="800">13.5%</text>
+    <text x="1078" y="408" fill="#5E6A68" font-size="18">hotfix/revert commit ratio</text>
+  </g>
+
+  <g font-family="Arial, sans-serif">
+    <rect x="48" y="448" width="644" height="180" rx="24" fill="#FFFCF7" fill-opacity="0.94" stroke="#D9CFC1"/>
+    <text x="76" y="486" fill="#1D2A2A" font-size="26" font-weight="700">Lead Time Trend</text>
+    <polyline points="102,586 250,564 398,526 546,586 664,586" stroke="#115E59" stroke-width="8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="102" y1="586" x2="664" y2="586" stroke="#D7D0C4" stroke-width="2"/>
+    <text x="102" y="612" fill="#5E6A68" font-size="18">03-17</text>
+    <text x="356" y="612" fill="#5E6A68" font-size="18">03-18</text>
+    <text x="612" y="612" fill="#5E6A68" font-size="18">03-19</text>
+
+    <rect x="708" y="448" width="644" height="180" rx="24" fill="#FFFCF7" fill-opacity="0.94" stroke="#D9CFC1"/>
+    <text x="736" y="486" fill="#1D2A2A" font-size="26" font-weight="700">Deployment Frequency Trend</text>
+    <rect x="780" y="548" width="74" height="36" rx="12" fill="#B45309" fill-opacity="0.8"/>
+    <rect x="958" y="510" width="74" height="74" rx="12" fill="#B45309" fill-opacity="0.8"/>
+    <rect x="1136" y="584" width="74" height="0" rx="12" fill="#B45309" fill-opacity="0.8"/>
+    <line x1="760" y1="586" x2="1288" y2="586" stroke="#D7D0C4" stroke-width="2"/>
+    <text x="780" y="612" fill="#5E6A68" font-size="18">03-17</text>
+    <text x="958" y="612" fill="#5E6A68" font-size="18">03-18</text>
+    <text x="1136" y="612" fill="#5E6A68" font-size="18">03-19</text>
+
+    <rect x="48" y="652" width="644" height="180" rx="24" fill="#FFFCF7" fill-opacity="0.94" stroke="#D9CFC1"/>
+    <text x="76" y="690" fill="#1D2A2A" font-size="26" font-weight="700">MTTR Trend</text>
+    <polyline points="102,722 250,722 398,722 546,722 664,722" stroke="#1D4ED8" stroke-width="8" fill="none" stroke-linecap="round"/>
+    <line x1="102" y1="748" x2="664" y2="748" stroke="#D7D0C4" stroke-width="2"/>
+    <text x="102" y="776" fill="#5E6A68" font-size="18">03-17</text>
+    <text x="356" y="776" fill="#5E6A68" font-size="18">03-18</text>
+    <text x="612" y="776" fill="#5E6A68" font-size="18">03-19</text>
+
+    <rect x="708" y="652" width="644" height="180" rx="24" fill="#FFFCF7" fill-opacity="0.94" stroke="#D9CFC1"/>
+    <text x="736" y="690" fill="#1D2A2A" font-size="26" font-weight="700">Change Failure Rate Trend</text>
+    <polyline points="762,744 940,734 1118,738 1296,722" stroke="#B91C1C" stroke-width="8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="762" y1="748" x2="1296" y2="748" stroke="#D7D0C4" stroke-width="2"/>
+    <text x="780" y="776" fill="#5E6A68" font-size="18">03-17</text>
+    <text x="958" y="776" fill="#5E6A68" font-size="18">03-18</text>
+    <text x="1136" y="776" fill="#5E6A68" font-size="18">03-19</text>
+  </g>
+</svg>
