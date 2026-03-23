@@ -1,0 +1,39 @@
+{
+  "generated_at": "2026-03-23T07:10:00Z",
+  "source": "metrics/dora/*.json",
+  "entries": [
+    {
+      "date": "2026-03-17",
+      "primary_branch": "main",
+      "grade": "Elite",
+      "window_days": 30,
+      "lead_time_hours": 0.5,
+      "deployment_frequency_per_week": 7.5,
+      "deployment_frequency_window_total": 30,
+      "mttr_hours": 6.0,
+      "change_failure_rate": 12.3
+    },
+    {
+      "date": "2026-03-18",
+      "primary_branch": "develop",
+      "grade": "Elite",
+      "window_days": 30,
+      "lead_time_hours": 1.1,
+      "deployment_frequency_per_week": 1.25,
+      "deployment_frequency_window_total": 5,
+      "mttr_hours": 6.0,
+      "change_failure_rate": 11.7
+    },
+    {
+      "date": "2026-03-19",
+      "primary_branch": "main",
+      "grade": "Low",
+      "window_days": 30,
+      "lead_time_hours": 0.0,
+      "deployment_frequency_per_week": 0.0,
+      "deployment_frequency_window_total": 0,
+      "mttr_hours": 0.0,
+      "change_failure_rate": 13.5
+    }
+  ]
+}
