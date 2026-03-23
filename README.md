@@ -60,6 +60,15 @@ GovOn/
 - 시계열 데이터: [docs/dora/history.json](docs/dora/history.json)
 - Grafana 공개 링크(선택): [DORA Metrics Dashboard](https://umyunsang.grafana.net/public-dashboards/a7672d6682fb498eb4578a8634262280)
 
+최신 자동 수집 기준 요약:
+
+- Lead Time: `0.0h`
+- Deployment Frequency: `0.00/wk`
+- MTTR: `0.0h`
+- Change Failure Rate: `13.5%`
+- Snapshot Date: `2026-03-19`
+- Primary Branch: `main`
+
 ![DORA Dashboard Preview](docs/images/dora-dashboard.svg)
 
 | 지표 | 설명 |
