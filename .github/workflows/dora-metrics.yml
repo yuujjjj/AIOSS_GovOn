@@ -424,6 +424,7 @@ jobs:
           # develop + main 브랜치 메트릭 모두 전송 (branch 라벨로 구분)
           python3 << PYEOF
           import subprocess, time, tempfile, os
+          import sys
 
           NOW = int(time.time())
           INTERVAL = 300  # 5분
@@ -467,13 +468,19 @@ jobs:
                   tmp = "/tmp/metrics_batch.txt"
                   with open(tmp, "w") as f:
                       f.write("\n".join(lines))
-                  subprocess.run(
+                  batch_result = subprocess.run(
                       ["curl", "-s", "-o", "/dev/null",
                        "-X", "POST", URL, "-u", AUTH,
                        "-H", "Content-Type: text/plain",
                        "--data-binary", f"@{tmp}"],
-                      capture_output=True
+                      capture_output=True,
+                      text=True
                   )
+                  if batch_result.returncode != 0:
+                      print(f"Grafana Cloud batch push failed with curl exit code {batch_result.returncode}", file=sys.stderr)
+                      if batch_result.stderr:
+                          print(batch_result.stderr, file=sys.stderr)
+                      sys.exit(1)
                   sent += len(lines) // len(METRICS)
                   lines = []
 
@@ -492,6 +499,12 @@ jobs:
               code = result.stdout.strip()
           else:
               code = "204"
+
+          if code not in {"200", "204"}:
+              print(f"Grafana Cloud push failed with HTTP {code}", file=sys.stderr)
+              if result.stderr:
+                  print(result.stderr, file=sys.stderr)
+              sys.exit(1)
 
           print(f"Grafana Cloud 메트릭 전송 완료 ({sent} points, HTTP {code})")
           PYEOF
