@@ -410,7 +410,12 @@ jobs:
           MAIN_CFR: ${{ steps.dora.outputs.main_cfr }}
         run: |
           # Grafana Cloud Prometheus에 InfluxDB line protocol로 메트릭 전송
-          INFLUX_URL="${GRAFANA_CLOUD_URL/api\/prom\/push/api/v1/push/influx/write}"
+          if [[ "$GRAFANA_CLOUD_URL" == */api/prom/push ]]; then
+            INFLUX_URL="${GRAFANA_CLOUD_URL%/api/prom/push}/api/v1/push/influx/write"
+          else
+            echo "Unexpected GRAFANA_CLOUD_URL format: $GRAFANA_CLOUD_URL" >&2
+            exit 1
+          fi
 
           # 등급을 숫자로 변환 (시각화용)
           case "$GRADE" in
