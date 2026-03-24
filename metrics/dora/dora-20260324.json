@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-03-24T10:37:31Z",
+  "timestamp": "2026-03-24T11:05:33Z",
   "window_days": 30,
   "period": "last_30_days",
   "grade": "Low",
@@ -17,9 +17,9 @@
       "sample_count": 0
     },
     "change_failure_rate": {
-      "rate_percent": 13.7,
+      "rate_percent": 13.6,
       "failure_commits": 23,
-      "total_commits": 168
+      "total_commits": 169
     },
     "mean_time_to_recovery": {
       "avg_seconds": 0,
