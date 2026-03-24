@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-03-24T11:25:31Z",
+  "timestamp": "2026-03-24T11:25:47Z",
   "period": "last_30_days",
   "grade": "Elite",
   "primary_branch": "develop",
@@ -39,9 +39,9 @@
       "sample_count": 30
     },
     "change_failure_rate": {
-      "rate_percent": 11.0,
+      "rate_percent": 10.9,
       "failure_commits": 34,
-      "total_commits": 310
+      "total_commits": 312
     }
   }
 }
