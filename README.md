@@ -1,6 +1,6 @@
 # On-device AI 민원 처리 및 분석 시스템
 
-[![DORA Dashboard](https://img.shields.io/badge/DORA_Dashboard-Grafana-F46800?logo=grafana)](https://umyunsang.grafana.net/public-dashboards/a7672d6682fb498eb4578a8634262280)
+[![DORA Dashboard](https://img.shields.io/badge/DORA_Dashboard-Local_Artifact-2D9CDB)](docs/dora/index.html)
 [![W&B Projects](https://img.shields.io/badge/W%26B_Projects-All_Experiments-FFBE00?logo=weightsandbiases)](https://wandb.ai/umyun3/projects)
 [![W&B Reports](https://img.shields.io/badge/W%26B_Reports-Analysis-EE6C4D?logo=weightsandbiases)](https://wandb.ai/umyun3/reports)
 
@@ -54,22 +54,29 @@ GovOn/
 
 ## DORA Metrics 대시보드
 
-프로젝트의 DevOps 성숙도를 DORA 4대 지표로 측정하고 GitHub Actions로 자동 수집합니다. 제출용 결과물은 저장소 내부의 Chart.js 대시보드와 이미지로 함께 제공합니다.
+프로젝트의 DevOps 성숙도를 DORA 4대 지표로 측정하고 GitHub Actions로 자동 수집합니다. 제출용 결과물은 저장소 내부의 대시보드와 이미지 산출물을 기준으로 제공합니다.
+
+- 과제 충족 항목:
+  - 대시보드 구현 결과 제시: `docs/dora/index.html` (Chart.js) 및 Grafana Dashboard
+  - 대시보드 이미지 GitHub 업로드: `docs/images/dora-dashboard-grafana.png`
+  - README 이미지 첨부: 아래 미리보기 반영 완료
 
 - Chart.js 구현 파일: [docs/dora/index.html](docs/dora/index.html)
 - 시계열 데이터: [docs/dora/history.json](docs/dora/history.json)
-- Grafana 공개 링크(선택): [DORA Metrics Dashboard](https://umyunsang.grafana.net/public-dashboards/a7672d6682fb498eb4578a8634262280)
+- 제출용 기준: 저장소 내부 산출물(`docs/dora/index.html`, `docs/images/dora-dashboard-grafana.png`)
 
 최신 자동 수집 기준 요약:
 
 - Lead Time: `0.0h`
 - Deployment Frequency: `0.00/wk`
 - MTTR: `0.0h`
-- Change Failure Rate: `13.5%`
-- Snapshot Date: `2026-03-19`
+- Change Failure Rate: `14.0%`
+- Snapshot Date: `2026-03-24`
 - Primary Branch: `main`
 
-![DORA Dashboard Preview](docs/images/dora-dashboard.svg)
+![DORA Dashboard Preview](docs/images/dora-dashboard-grafana.png)
+
+위 이미지는 GitHub 저장소에 업로드된 제출용 대시보드 결과물이며, README에서 바로 확인할 수 있습니다. 실제 구현 결과는 Chart.js 대시보드와 Grafana Dashboard 양쪽에서 확인할 수 있습니다.
 
 | 지표 | 설명 |
 |------|------|
@@ -103,17 +110,16 @@ GovOn/
 
 - 수집 JSON: `metrics/dora/dora-YYYYMMDD.json`
 - 워크플로우 요약: GitHub Actions Step Summary
-- 시각화: 공개 Grafana 대시보드 링크
+- 시각화: `docs/dora/index.html`, `docs/images/dora-dashboard-grafana.png`
 
-#### README 이미지 첨부 방법
+#### README 이미지 첨부 현황
 
-1. Grafana 대시보드를 연다.
-2. 화면을 캡처해 `docs/images/dora-dashboard.png` 또는 `docs/images/dora-dashboard.svg`로 저장한다.
-3. 아래 마크다운을 README에 추가한다.
-
-```md
-![DORA Dashboard](docs/images/dora-dashboard.svg)
-```
+- DORA 대시보드 이미지는 현재 README에 반영되어 있습니다.
+- 제출용 이미지 산출물은 `docs/images/dora-dashboard-grafana.png`를 사용합니다.
+- 구현 결과 확인 경로:
+  - Chart.js 대시보드: `docs/dora/index.html`
+  - README 첨부 이미지: `docs/images/dora-dashboard-grafana.png`
+  - Grafana 구현 결과: Grafana Dashboard 화면 캡처 이미지 사용 가능
 
 ## 개발 환경 설정
 

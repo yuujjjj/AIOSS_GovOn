@@ -112,8 +112,8 @@
     },
     {
       "id": 2,
-      "title": "배포 빈도 (월간)",
-      "description": "develop 브랜치 머지 PR 수",
+      "title": "배포 빈도 (기간 합계)",
+      "description": "develop 브랜치 머지 PR 수 (수집 기간 전체)",
       "type": "stat",
       "gridPos": {
         "h": 5,
@@ -127,8 +127,8 @@
       },
       "targets": [
         {
-          "expr": "dora_deployment_frequency{project=\"govon\", branch=\"develop\", period=\"monthly\"}",
-          "legendFormat": "월간 배포",
+          "expr": "dora_deployment_frequency{project=\"govon\", branch=\"develop\", period=\"window_total\"}",
+          "legendFormat": "기간 합계 배포",
           "refId": "A",
           "datasource": {
             "type": "prometheus",
@@ -151,7 +151,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "displayName": "월간 배포",
+          "displayName": "기간 합계 배포",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -384,8 +384,8 @@
           "interval": "5m"
         },
         {
-          "expr": "dora_deployment_frequency{project=\"govon\", branch=\"develop\", period=\"monthly\"}",
-          "legendFormat": "develop 월간",
+          "expr": "dora_deployment_frequency{project=\"govon\", branch=\"develop\", period=\"window_total\"}",
+          "legendFormat": "develop 기간 합계",
           "refId": "B",
           "datasource": {
             "type": "prometheus",
@@ -404,8 +404,8 @@
           "interval": "5m"
         },
         {
-          "expr": "dora_deployment_frequency{project=\"govon\", branch=\"main\", period=\"monthly\"}",
-          "legendFormat": "main 월간",
+          "expr": "dora_deployment_frequency{project=\"govon\", branch=\"main\", period=\"window_total\"}",
+          "legendFormat": "main 기간 합계",
           "refId": "D",
           "datasource": {
             "type": "prometheus",
