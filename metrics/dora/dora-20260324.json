@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-03-24T09:58:39Z",
+  "timestamp": "2026-03-24T09:58:44Z",
   "period": "last_30_days",
   "grade": "Elite",
   "primary_branch": "develop",
@@ -16,9 +16,9 @@
       "sample_count": 7
     },
     "change_failure_rate": {
-      "rate_percent": 11.4,
+      "rate_percent": 11.6,
       "failure_commits": 34,
-      "total_commits": 299
+      "total_commits": 293
     },
     "mean_time_to_recovery": {
       "avg_seconds": 21688,
