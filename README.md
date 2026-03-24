@@ -1,6 +1,6 @@
 # On-device AI 민원 처리 및 분석 시스템
 
-[![DORA Dashboard](https://img.shields.io/badge/DORA_Dashboard-Local_Artifact-2D9CDB)](docs/dora/index.html)
+[![DORA Dashboard](https://img.shields.io/badge/DORA_Dashboard-Grafana-F46800?logo=grafana)](https://yuujjjj.grafana.net/d/govon-dora/govon-dora-metrics-dashboard?orgId=1&from=now-30d&to=now&timezone=Asia%2FSeoul)
 [![W&B Projects](https://img.shields.io/badge/W%26B_Projects-All_Experiments-FFBE00?logo=weightsandbiases)](https://wandb.ai/umyun3/projects)
 [![W&B Reports](https://img.shields.io/badge/W%26B_Reports-Analysis-EE6C4D?logo=weightsandbiases)](https://wandb.ai/umyun3/reports)
 
