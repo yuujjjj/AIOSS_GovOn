@@ -1,9 +1,11 @@
 import json
 import os
 import re
+import time
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import AsyncGenerator, List
+from typing import AsyncGenerator, List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Security
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,30 +15,32 @@ from loguru import logger
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.async_llm_engine import AsyncLLMEngine
 from vllm.sampling_params import SamplingParams
-from contextlib import asynccontextmanager
 
-from .vllm_stabilizer import apply_transformers_patch
+from .agent_manager import AgentManager
+from .bm25_indexer import BM25Indexer
+from .hybrid_search import HybridSearchEngine, SearchMode
+from .index_manager import IndexType, MultiIndexManager
+from .retriever import CivilComplaintRetriever
 from .schemas import (
     ClassificationResult,
     ClassifyRequest,
     ClassifyResponse,
     GenerateRequest,
     GenerateResponse,
+    RetrievedCase,
     SearchRequest,
     SearchResponse,
     SearchResult,
     StreamResponse,
-    RetrievedCase,
 )
-from .retriever import CivilComplaintRetriever
-from .agent_manager import AgentManager
+from .vllm_stabilizer import apply_transformers_patch
 
 # --- Rate Limiting (optional) ---
 try:
     from slowapi import Limiter
-    from slowapi.util import get_remote_address
     from slowapi.errors import RateLimitExceeded
     from slowapi.middleware import SlowAPIMiddleware
+    from slowapi.util import get_remote_address
 
     limiter = Limiter(key_func=get_remote_address)
     _RATE_LIMIT_AVAILABLE = True
@@ -75,11 +79,15 @@ apply_transformers_patch()
 
 class vLLMEngineManager:
     """Manages the global AsyncLLMEngine and Retriever lifecycle for M3 Phase."""
+
     def __init__(self):
         self.engine: AsyncLLMEngine = None
         self.retriever: CivilComplaintRetriever = None
         self.index_manager = None
         self.agent_manager: AgentManager = None
+        self.hybrid_engine: Optional[HybridSearchEngine] = None
+        self.bm25_indexers: dict = {}
+        self.embed_model = None
 
     async def initialize(self):
         # 1. Initialize Optimized vLLM Engine
@@ -89,7 +97,7 @@ class vLLMEngineManager:
             gpu_memory_utilization=GPU_UTILIZATION,
             max_model_len=MAX_MODEL_LEN,
             dtype="half",
-            enforce_eager=True  # More stable for patched EXAONE
+            enforce_eager=True,  # More stable for patched EXAONE
         )
         logger.info(f"Initializing vLLM M3 engine with model: {MODEL_PATH}")
         self.engine = AsyncLLMEngine.from_engine_args(engine_args)
@@ -98,7 +106,7 @@ class vLLMEngineManager:
         logger.info(f"Initializing RAG Retriever with index: {INDEX_PATH}")
         self.retriever = CivilComplaintRetriever(
             index_path=INDEX_PATH if os.path.exists(INDEX_PATH) else None,
-            data_path=DATA_PATH if not os.path.exists(INDEX_PATH) else None
+            data_path=DATA_PATH if not os.path.exists(INDEX_PATH) else None,
         )
         if self.retriever.index is not None and not os.path.exists(INDEX_PATH):
             self.retriever.save_index(INDEX_PATH)
@@ -108,11 +116,73 @@ class vLLMEngineManager:
         self.agent_manager = AgentManager(AGENTS_DIR)
         logger.info(f"Loaded agents: {self.agent_manager.list_agents()}")
 
+        # 4. Initialize MultiIndexManager
+        faiss_index_dir = os.getenv("FAISS_INDEX_DIR", "models/faiss_index")
+        if os.path.isdir(faiss_index_dir):
+            self.index_manager = MultiIndexManager(base_dir=faiss_index_dir)
+            logger.info(f"MultiIndexManager 초기화 완료: {faiss_index_dir}")
+        else:
+            logger.warning(
+                f"FAISS 인덱스 디렉토리 미존재: {faiss_index_dir} — MultiIndexManager 미초기화"
+            )
+
+        # 5. Initialize BM25 Indexers & HybridSearchEngine
+        bm25_index_dir = os.getenv("BM25_INDEX_DIR", "models/bm25_index")
+        if os.path.isdir(bm25_index_dir):
+            if not os.getenv("BM25_INDEX_HMAC_KEY"):
+                logger.warning(
+                    "BM25_INDEX_HMAC_KEY 미설정: BM25 인덱스 무결성 검증이 비활성화되어 있습니다. "
+                    "프로덕션 환경에서는 HMAC 키를 설정하세요."
+                )
+            for idx_type in IndexType:
+                bm25_path = os.path.join(bm25_index_dir, f"{idx_type.value}.pkl")
+                if os.path.exists(bm25_path):
+                    try:
+                        indexer = BM25Indexer()
+                        indexer.load(bm25_path)
+                        self.bm25_indexers[idx_type] = indexer
+                        logger.info(
+                            f"BM25 인덱스 로드 완료: {idx_type.value} ({indexer.doc_count}건)"
+                        )
+                    except Exception as e:
+                        logger.warning(f"BM25 인덱스 로드 실패 ({idx_type.value}): {e}")
+
+        # Embed model 추출 (retriever에서 공유)
+        if self.retriever and hasattr(self.retriever, "model"):
+            self.embed_model = self.retriever.model
+
+        # HybridSearchEngine 초기화
+        if self.index_manager and self.embed_model:
+            self.hybrid_engine = HybridSearchEngine(
+                index_manager=self.index_manager,
+                bm25_indexers=self.bm25_indexers,
+                embed_model=self.embed_model,
+            )
+            logger.info(
+                f"HybridSearchEngine 초기화 완료 (BM25 인덱스: "
+                f"{list(self.bm25_indexers.keys())})"
+            )
+        else:
+            logger.warning("HybridSearchEngine 미초기화: index_manager 또는 embed_model 없음")
+
     def _escape_special_tokens(self, text: str) -> str:
         """Escape EXAONE chat template tokens to prevent prompt injection."""
-        tokens = ["[|user|]", "[|assistant|]", "[|system|]", "[|endofturn|]", "<thought>", "</thought>"]
+        tokens = [
+            "[|user|]",
+            "[|assistant|]",
+            "[|system|]",
+            "[|endofturn|]",
+            "<thought>",
+            "</thought>",
+        ]
         for token in tokens:
-            text = text.replace(token, token.replace("[", "\\[").replace("]", "\\]").replace("<", "\\<").replace(">", "\\>"))
+            text = text.replace(
+                token,
+                token.replace("[", "\\[")
+                .replace("]", "\\]")
+                .replace("<", "\\<")
+                .replace(">", "\\>"),
+            )
         return text
 
     def _build_rag_context(self, retrieved_cases: List[dict]) -> str:
@@ -180,10 +250,11 @@ class vLLMEngineManager:
             top_p=request.top_p,
             max_tokens=request.max_tokens,
             stop=request.stop,
-            repetition_penalty=1.1  # Added for EXAONE stability
+            repetition_penalty=1.1,  # Added for EXAONE stability
         )
 
         return self.engine.generate(augmented_prompt, sampling_params, request_id), retrieved_cases
+
 
 manager = vLLMEngineManager()
 
@@ -194,10 +265,11 @@ async def lifespan(app: FastAPI):
     await manager.initialize()
     yield
 
+
 app = FastAPI(
     title="GovOn AI Serving API (M3 Optimized)",
     description="High-performance FastAPI + vLLM with RAG support for GovOn project.",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # --- m-6: CORS 미들웨어 ---
@@ -243,9 +315,11 @@ def _rate_limit(limit_string: str):
     """slowapi가 사용 가능할 때만 rate limit 데코레이터를 반환한다."""
     if _RATE_LIMIT_AVAILABLE and limiter is not None:
         return limiter.limit(limit_string)
+
     # slowapi 미설치 시 아무 동작도 하지 않는 패스스루 데코레이터
     def _noop(func):
         return func
+
     return _noop
 
 
@@ -322,7 +396,7 @@ async def generate(request: GenerateRequest, _: None = Depends(verify_api_key)):
         text=final_output.outputs[0].text,
         prompt_tokens=len(final_output.prompt_token_ids),
         completion_tokens=len(final_output.outputs[0].token_ids),
-        retrieved_cases=[RetrievedCase(**c) for c in retrieved_cases]
+        retrieved_cases=[RetrievedCase(**c) for c in retrieved_cases],
     )
 
 
@@ -343,11 +417,7 @@ async def stream_generate(request: GenerateRequest, _: None = Depends(verify_api
             text = request_output.outputs[0].text
             finished = request_output.finished
 
-            response_obj = {
-                "request_id": request_id,
-                "text": text,
-                "finished": finished
-            }
+            response_obj = {"request_id": request_id, "text": text, "finished": finished}
             if finished:
                 response_obj["retrieved_cases"] = cases_data
 
@@ -357,38 +427,72 @@ async def stream_generate(request: GenerateRequest, _: None = Depends(verify_api
 
 
 # --- S-1: /search 엔드포인트 ---
+# NOTE: slowapi는 경로별 별도 버킷으로 rate limit을 추적합니다.
+# /v1/search와 /search 각각 60/minute으로 제한됩니다.
+@app.post("/v1/search", response_model=SearchResponse)
 @app.post("/search", response_model=SearchResponse)
 @_rate_limit("60/minute")
 async def search(request: SearchRequest, req: Request, _: None = Depends(verify_api_key)):
-    """확장 검색 엔드포인트. doc_type은 IndexType enum으로 자동 검증된다."""
+    """확장 검색 엔드포인트. search_mode로 검색 방식을 선택한다."""
+    start_time = time.monotonic()
     try:
-        if not manager.index_manager:
-            raise HTTPException(status_code=503, detail="검색 인덱스가 아직 초기화되지 않았습니다.")
-
-        # index_manager.search는 query_vector를 기대하므로 임베딩 변환 필요
-        # 여기서는 retriever가 있으면 retriever를 통해 검색
-        if manager.retriever:
+        # HybridSearchEngine 사용
+        if manager.hybrid_engine:
+            results_raw = await manager.hybrid_engine.search(
+                query=request.query,
+                index_type=request.doc_type,
+                top_k=request.top_k,
+                mode=request.search_mode,
+            )
+            results = [
+                SearchResult(
+                    doc_id=r.get("doc_id", ""),
+                    source_type=IndexType(r.get("doc_type", request.doc_type.value)),
+                    title=r.get("title", ""),
+                    content=(
+                        r.get("extras", {}).get("complaint_text", "")
+                        + "\n"
+                        + r.get("extras", {}).get("answer_text", "")
+                    ).strip()
+                    or r.get("title", ""),
+                    score=r.get("score", 0.0),
+                    reliability_score=r.get("reliability_score", 1.0),
+                    metadata=r.get("extras", {}),
+                    chunk_index=r.get("chunk_index", 0),
+                    total_chunks=r.get("chunk_total", 1),
+                )
+                for r in results_raw
+            ]
+            actual_mode = request.search_mode
+        # 레거시 폴백: retriever 사용
+        elif manager.retriever:
             raw_results = manager.retriever.search(request.query, top_k=request.top_k)
             results = [
                 SearchResult(
-                    doc_id=raw.get("doc_id", ""),
+                    doc_id=raw.get("id", raw.get("doc_id", "")),
                     source_type=request.doc_type,
                     title=raw.get("category", ""),
                     content=raw.get("complaint", "") + "\n" + raw.get("answer", ""),
                     score=raw.get("score", 0.0),
-                    # m-1: reliability_score 기본값 0.6
-                    reliability_score=raw.get("reliability_score", 0.6),
+                    reliability_score=raw.get("reliability_score", 1.0),
                 )
                 for raw in raw_results
             ]
+            actual_mode = SearchMode.DENSE
         else:
-            results = []
+            raise HTTPException(
+                status_code=503,
+                detail="검색 엔진이 아직 초기화되지 않았습니다.",
+            )
 
+        elapsed_ms = (time.monotonic() - start_time) * 1000
         return SearchResponse(
             query=request.query,
             doc_type=request.doc_type,
+            search_mode=actual_mode,
             results=results,
             total=len(results),
+            search_time_ms=round(elapsed_ms, 2),
         )
     except HTTPException:
         raise
@@ -400,4 +504,5 @@ async def search(request: SearchRequest, req: Request, _: None = Depends(verify_
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)

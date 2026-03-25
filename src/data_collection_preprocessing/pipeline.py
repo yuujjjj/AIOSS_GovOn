@@ -8,38 +8,37 @@ Main entry point for the complete data pipeline:
 4. Transform to EXAONE instruction-tuning format
 5. Split into train/validation/test sets
 6. Generate AWQ calibration dataset
+7. Build BM25 indexes for sparse keyword retrieval
 
 Usage:
     python -m src.data_collection_preprocessing.pipeline --help
     python -m src.data_collection_preprocessing.pipeline --mode full
     python -m src.data_collection_preprocessing.pipeline --mode collect
     python -m src.data_collection_preprocessing.pipeline --mode preprocess
+    python -m src.data_collection_preprocessing.pipeline --mode bm25
 """
 
+import argparse
+import json
+import logging
 import os
 import sys
-import json
-import argparse
-import logging
-from pathlib import Path
-from typing import Optional, List, Dict, Any
+from dataclasses import asdict, dataclass
 from datetime import datetime
-from dataclasses import dataclass, asdict
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-from .config import Config, get_config
 from .aihub_collector import AIHubCollector, create_mock_dataset
-from .pii_masking import PIIMasker
-from .data_preprocessor import DataPreprocessor, ProcessedRecord
 from .calibration_dataset import CalibrationDatasetGenerator
+from .config import Config, get_config
+from .data_preprocessor import DataPreprocessor, ProcessedRecord
+from .pii_masking import PIIMasker
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler("pipeline.log", encoding="utf-8")
-    ]
+    handlers=[logging.StreamHandler(), logging.FileHandler("pipeline.log", encoding="utf-8")],
 )
 logger = logging.getLogger(__name__)
 
@@ -47,6 +46,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class PipelineResult:
     """Result of pipeline execution"""
+
     success: bool
     mode: str
     start_time: str
@@ -93,9 +93,7 @@ class DataPipeline:
         self.result = None
 
     def collect_from_aihub(
-        self,
-        use_mock: bool = False,
-        mock_samples: int = 100
+        self, use_mock: bool = False, mock_samples: int = 100
     ) -> List[Dict[str, Any]]:
         """
         Collect data from AI Hub.
@@ -112,8 +110,7 @@ class DataPipeline:
         if use_mock:
             # Create mock data for testing
             mock_path = create_mock_dataset(
-                Path(self.config.aihub.download_dir) / "mock",
-                num_samples=mock_samples
+                Path(self.config.aihub.download_dir) / "mock", num_samples=mock_samples
             )
             with open(mock_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -140,11 +137,7 @@ class DataPipeline:
         logger.info(f"Total AI Hub records collected: {len(collected_data)}")
         return collected_data
 
-    def collect_all(
-        self,
-        use_mock: bool = False,
-        mock_samples: int = 100
-    ) -> List[Dict[str, Any]]:
+    def collect_all(self, use_mock: bool = False, mock_samples: int = 100) -> List[Dict[str, Any]]:
         """
         Collect data from all sources (AI Hub).
 
@@ -164,10 +157,7 @@ class DataPipeline:
         logger.info(f"Total records collected: {len(aihub_data)}")
         return aihub_data
 
-    def preprocess(
-        self,
-        raw_data: Optional[List[Dict[str, Any]]] = None
-    ) -> List[ProcessedRecord]:
+    def preprocess(self, raw_data: Optional[List[Dict[str, Any]]] = None) -> List[ProcessedRecord]:
         """
         Preprocess collected data.
 
@@ -193,21 +183,11 @@ class DataPipeline:
 
         # Process AI Hub data
         if aihub_data:
-            processed.extend(
-                self.preprocessor.process_raw_data(
-                    aihub_data,
-                    source="aihub"
-                )
-            )
+            processed.extend(self.preprocessor.process_raw_data(aihub_data, source="aihub"))
 
         # Process other data
         if other_data:
-            processed.extend(
-                self.preprocessor.process_raw_data(
-                    other_data,
-                    source="other"
-                )
-            )
+            processed.extend(self.preprocessor.process_raw_data(other_data, source="other"))
 
         self.processed_records = processed
         logger.info(f"Total processed records: {len(processed)}")
@@ -216,7 +196,7 @@ class DataPipeline:
     def split_and_save(
         self,
         processed_records: Optional[List[ProcessedRecord]] = None,
-        prefix: str = "civil_complaint"
+        prefix: str = "civil_complaint",
     ) -> Dict[str, Path]:
         """
         Split dataset and save all files.
@@ -236,9 +216,7 @@ class DataPipeline:
 
         # Split dataset
         train, val, test = self.preprocessor.split_dataset(
-            processed_records,
-            shuffle=True,
-            random_seed=self.config.calibration.random_seed
+            processed_records, shuffle=True, random_seed=self.config.calibration.random_seed
         )
 
         # Save splits
@@ -249,7 +227,7 @@ class DataPipeline:
     def generate_calibration_dataset(
         self,
         processed_records: Optional[List[ProcessedRecord]] = None,
-        filename: str = "calibration_dataset"
+        filename: str = "calibration_dataset",
     ) -> Dict[str, Path]:
         """
         Generate AWQ calibration dataset.
@@ -274,7 +252,7 @@ class DataPipeline:
         self,
         use_mock: bool = False,
         mock_samples: int = 100,
-        output_prefix: str = "civil_complaint"
+        output_prefix: str = "civil_complaint",
     ) -> PipelineResult:
         """
         Run the complete data pipeline.
@@ -293,7 +271,7 @@ class DataPipeline:
             mode="full",
             start_time=start_time.isoformat(),
             end_time="",
-            duration_seconds=0
+            duration_seconds=0,
         )
 
         try:
@@ -322,9 +300,7 @@ class DataPipeline:
             logger.info("Step 3: Dataset Splitting and Saving")
             logger.info("=" * 60)
             dataset_paths = self.split_and_save(processed, output_prefix)
-            result.output_files.update({
-                k: str(v) for k, v in dataset_paths.items()
-            })
+            result.output_files.update({k: str(v) for k, v in dataset_paths.items()})
 
             # Step 4: Generate calibration dataset
             logger.info("=" * 60)
@@ -333,9 +309,18 @@ class DataPipeline:
             calibration_paths = self.generate_calibration_dataset(
                 processed, f"{output_prefix}_calibration"
             )
-            result.output_files.update({
-                f"calibration_{k}": str(v) for k, v in calibration_paths.items()
-            })
+            result.output_files.update(
+                {f"calibration_{k}": str(v) for k, v in calibration_paths.items()}
+            )
+
+            # Step 5: Build BM25 indexes
+            logger.info("=" * 60)
+            logger.info("Step 5: BM25 Index Building")
+            logger.info("=" * 60)
+            bm25_paths = self.build_bm25_indexes()
+            if not bm25_paths:
+                logger.warning("Step 5: BM25 인덱스가 빌드되지 않았습니다 (비치명적).")
+            result.output_files.update({f"bm25_{k}": v for k, v in bm25_paths.items()})
 
             result.success = True
 
@@ -365,11 +350,7 @@ class DataPipeline:
         self.result = result
         return result
 
-    def run_collect_only(
-        self,
-        use_mock: bool = False,
-        mock_samples: int = 100
-    ) -> PipelineResult:
+    def run_collect_only(self, use_mock: bool = False, mock_samples: int = 100) -> PipelineResult:
         """Run collection phase only"""
         start_time = datetime.now()
         result = PipelineResult(
@@ -377,7 +358,7 @@ class DataPipeline:
             mode="collect",
             start_time=start_time.isoformat(),
             end_time="",
-            duration_seconds=0
+            duration_seconds=0,
         )
 
         try:
@@ -404,9 +385,7 @@ class DataPipeline:
         return result
 
     def run_preprocess_only(
-        self,
-        input_file: str,
-        output_prefix: str = "civil_complaint"
+        self, input_file: str, output_prefix: str = "civil_complaint"
     ) -> PipelineResult:
         """Run preprocessing phase only from existing raw data"""
         start_time = datetime.now()
@@ -415,7 +394,7 @@ class DataPipeline:
             mode="preprocess",
             start_time=start_time.isoformat(),
             end_time="",
-            duration_seconds=0
+            duration_seconds=0,
         )
 
         try:
@@ -441,14 +420,94 @@ class DataPipeline:
             calibration_paths = self.generate_calibration_dataset(
                 processed, f"{output_prefix}_calibration"
             )
-            result.output_files.update({
-                f"calibration_{k}": str(v) for k, v in calibration_paths.items()
-            })
+            result.output_files.update(
+                {f"calibration_{k}": str(v) for k, v in calibration_paths.items()}
+            )
 
             result.success = len(processed) > 0
 
         except Exception as e:
             logger.error(f"Preprocessing failed: {e}")
+            result.errors.append(str(e))
+
+        finally:
+            end_time = datetime.now()
+            result.end_time = end_time.isoformat()
+            result.duration_seconds = (end_time - start_time).total_seconds()
+
+        return result
+
+    def build_bm25_indexes(
+        self,
+        data_dir: Optional[str] = None,
+        output_dir: str = "models/bm25_index",
+    ) -> Dict[str, str]:
+        """
+        처리된 JSONL 파일에서 BM25 인덱스를 빌드한다.
+
+        Args:
+            data_dir: 처리된 JSONL 파일이 있는 디렉토리.
+                      None이면 self.config.preprocessing.processed_dir 사용.
+            output_dir: BM25 인덱스 저장 디렉토리.
+
+        Returns:
+            {index_type: output_path} 딕셔너리
+        """
+        data_dir = data_dir or self.config.preprocessing.processed_dir
+        result: Dict[str, str] = {}
+
+        try:
+            from src.inference.bm25_indexer import BM25Indexer
+
+            data_path = Path(data_dir)
+            # *_train.jsonl 우선, 없으면 *.jsonl 전체
+            jsonl_files = list(data_path.glob("*_train.jsonl"))
+            if not jsonl_files:
+                jsonl_files = list(data_path.glob("*.jsonl"))
+
+            if not jsonl_files:
+                logger.warning(f"No JSONL files found in {data_dir}")
+                return result
+
+            for jsonl_path in jsonl_files:
+                indexer = BM25Indexer()
+                indexer.build_index_from_jsonl(str(jsonl_path))
+                # 파일명에서 인덱스 이름 파생 (예: v2_train.jsonl -> v2)
+                stem = (
+                    jsonl_path.stem.replace("_train", "").replace("_valid", "").replace("_test", "")
+                )
+                output_path = os.path.join(output_dir, f"{stem}.pkl")
+                indexer.save(output_path)
+                logger.info(f"BM25 index built: {indexer.doc_count} documents -> {output_path}")
+                result[stem] = output_path
+
+        except Exception as e:
+            logger.error(f"BM25 index building failed: {e}")
+
+        return result
+
+    def run_bm25_only(
+        self,
+        data_dir: Optional[str] = None,
+        output_dir: str = "models/bm25_index",
+    ) -> PipelineResult:
+        """BM25 인덱스 빌드만 실행한다."""
+        start_time = datetime.now()
+        result = PipelineResult(
+            success=False,
+            mode="bm25",
+            start_time=start_time.isoformat(),
+            end_time="",
+            duration_seconds=0,
+        )
+
+        try:
+            bm25_paths = self.build_bm25_indexes(data_dir=data_dir, output_dir=output_dir)
+            result.output_files.update({f"bm25_{k}": v for k, v in bm25_paths.items()})
+            result.success = len(bm25_paths) > 0
+
+        except Exception as e:
+            logger.error(f"BM25 pipeline failed: {e}")
             result.errors.append(str(e))
 
         finally:
@@ -481,48 +540,48 @@ Examples:
 
   # Preprocess existing data
   python -m src.data_collection_preprocessing.pipeline --mode preprocess --input raw_data.json
-        """
+
+  # Build BM25 indexes only
+  python -m src.data_collection_preprocessing.pipeline --mode bm25
+
+  # Build BM25 indexes from specific directory
+  python -m src.data_collection_preprocessing.pipeline --mode bm25 --input /path/to/jsonl --bm25-output models/bm25_index
+        """,
     )
 
     parser.add_argument(
         "--mode",
-        choices=["full", "collect", "preprocess"],
+        choices=["full", "collect", "preprocess", "bm25"],
         default="full",
-        help="Pipeline mode: full (collect + preprocess), collect only, or preprocess only"
+        help="Pipeline mode: full (collect + preprocess), collect only, or preprocess only",
     )
 
-    parser.add_argument(
-        "--mock",
-        action="store_true",
-        help="Use mock data for testing"
-    )
+    parser.add_argument("--mock", action="store_true", help="Use mock data for testing")
 
     parser.add_argument(
         "--mock-samples",
         type=int,
         default=100,
-        help="Number of mock samples per source (default: 100)"
+        help="Number of mock samples per source (default: 100)",
     )
 
-    parser.add_argument(
-        "--input",
-        type=str,
-        default=None,
-        help="Input file for preprocess mode"
-    )
+    parser.add_argument("--input", type=str, default=None, help="Input file for preprocess mode")
 
     parser.add_argument(
         "--output-prefix",
         type=str,
         default="civil_complaint",
-        help="Output filename prefix (default: civil_complaint)"
+        help="Output filename prefix (default: civil_complaint)",
     )
 
     parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Enable verbose logging"
+        "--bm25-output",
+        type=str,
+        default="models/bm25_index",
+        help="BM25 인덱스 출력 디렉토리 (default: models/bm25_index)",
     )
+
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
 
     args = parser.parse_args()
 
@@ -535,23 +594,24 @@ Examples:
 
     if args.mode == "full":
         result = pipeline.run_full_pipeline(
-            use_mock=args.mock,
-            mock_samples=args.mock_samples,
-            output_prefix=args.output_prefix
+            use_mock=args.mock, mock_samples=args.mock_samples, output_prefix=args.output_prefix
         )
 
     elif args.mode == "collect":
-        result = pipeline.run_collect_only(
-            use_mock=args.mock,
-            mock_samples=args.mock_samples
-        )
+        result = pipeline.run_collect_only(use_mock=args.mock, mock_samples=args.mock_samples)
 
     elif args.mode == "preprocess":
         if not args.input:
             parser.error("--input is required for preprocess mode")
         result = pipeline.run_preprocess_only(
             input_file=args.input,
-            output_prefix=args.output_prefix
+            output_prefix=args.output_prefix,
+        )
+
+    elif args.mode == "bm25":
+        result = pipeline.run_bm25_only(
+            data_dir=args.input,
+            output_dir=args.bm25_output,
         )
 
     # Print summary
