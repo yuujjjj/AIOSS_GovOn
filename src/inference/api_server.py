@@ -2,6 +2,7 @@ import json
 import os
 import re
 import uuid
+from pathlib import Path
 from typing import AsyncGenerator, List
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Security
@@ -16,6 +17,9 @@ from contextlib import asynccontextmanager
 
 from .vllm_stabilizer import apply_transformers_patch
 from .schemas import (
+    ClassificationResult,
+    ClassifyRequest,
+    ClassifyResponse,
     GenerateRequest,
     GenerateResponse,
     SearchRequest,
@@ -25,6 +29,7 @@ from .schemas import (
     RetrievedCase,
 )
 from .retriever import CivilComplaintRetriever
+from .agent_manager import AgentManager
 
 # --- Rate Limiting (optional) ---
 try:
@@ -61,6 +66,8 @@ INDEX_PATH = os.getenv("INDEX_PATH", "models/faiss_index/complaints.index")
 GPU_UTILIZATION = float(os.getenv("GPU_UTILIZATION", "0.8"))
 MAX_MODEL_LEN = int(os.getenv("MAX_MODEL_LEN", "8192"))
 TRUST_REMOTE_CODE = True
+_PROJECT_ROOT = str(Path(__file__).resolve().parent.parent.parent)
+AGENTS_DIR = os.getenv("AGENTS_DIR", os.path.join(_PROJECT_ROOT, "agents"))
 
 # Apply EXAONE-specific runtime patches
 apply_transformers_patch()
@@ -72,6 +79,7 @@ class vLLMEngineManager:
         self.engine: AsyncLLMEngine = None
         self.retriever: CivilComplaintRetriever = None
         self.index_manager = None
+        self.agent_manager: AgentManager = None
 
     async def initialize(self):
         # 1. Initialize Optimized vLLM Engine
@@ -95,6 +103,11 @@ class vLLMEngineManager:
         if self.retriever.index is not None and not os.path.exists(INDEX_PATH):
             self.retriever.save_index(INDEX_PATH)
 
+        # 3. Initialize Agent Manager
+        logger.info(f"Loading agent personas from: {AGENTS_DIR}")
+        self.agent_manager = AgentManager(AGENTS_DIR)
+        logger.info(f"Loaded agents: {self.agent_manager.list_agents()}")
+
     def _escape_special_tokens(self, text: str) -> str:
         """Escape EXAONE chat template tokens to prevent prompt injection."""
         tokens = ["[|user|]", "[|assistant|]", "[|system|]", "[|endofturn|]", "<thought>", "</thought>"]
@@ -102,17 +115,23 @@ class vLLMEngineManager:
             text = text.replace(token, token.replace("[", "\\[").replace("]", "\\]").replace("<", "\\<").replace(">", "\\>"))
         return text
 
+    def _build_rag_context(self, retrieved_cases: List[dict]) -> str:
+        """RAG 참고 사례 컨텍스트 문자열을 생성한다."""
+        if not retrieved_cases:
+            return ""
+        rag_context = "### 참고 사례 (유사 민원 및 답변):\n"
+        for i, case in enumerate(retrieved_cases):
+            safe_complaint = self._escape_special_tokens(case.get("complaint", ""))
+            safe_answer = self._escape_special_tokens(case.get("answer", ""))
+            rag_context += f"{i+1}. [민원]: {safe_complaint}\n   [답변]: {safe_answer}\n\n"
+        return rag_context
+
     def _augment_prompt(self, prompt: str, retrieved_cases: List[dict]) -> str:
-        """Augment the prompt with retrieved similar cases (RAG)."""
+        """Augment the prompt with retrieved similar cases (RAG). (레거시 폴백용)"""
         if not retrieved_cases:
             return prompt
 
-        rag_context = "\n\n### 참고 사례 (유사 민원 및 답변):\n"
-        for i, case in enumerate(retrieved_cases):
-            # M-2: .get() 사용으로 KeyError 방지
-            safe_complaint = self._escape_special_tokens(case.get('complaint', ''))
-            safe_answer = self._escape_special_tokens(case.get('answer', ''))
-            rag_context += f"{i+1}. [민원]: {safe_complaint}\n   [답변]: {safe_answer}\n\n"
+        rag_context = "\n\n" + self._build_rag_context(retrieved_cases)
 
         # Structure the prompt for EXAONE Chat Template
         if "[|user|]" in prompt:
@@ -134,16 +153,28 @@ class vLLMEngineManager:
     async def generate(self, request: GenerateRequest, request_id: str) -> tuple:
         # 1. RAG: Retrieve similar cases if enabled
         retrieved_cases = []
-        augmented_prompt = request.prompt
 
         if request.use_rag and self.retriever:
-            # M-4: 사용자 입력에도 escape 적용
             query = self._escape_special_tokens(self._extract_query(request.prompt))
-
             retrieved_cases = self.retriever.search(query, top_k=3)
-            augmented_prompt = self._augment_prompt(request.prompt, retrieved_cases)
 
-        # 2. vLLM Generation
+        # 2. Build prompt: generator 페르소나가 있으면 사용, 없으면 레거시 폴백
+        if self.agent_manager and self.agent_manager.get_agent("generator"):
+            safe_message = self._escape_special_tokens(request.prompt)
+            if retrieved_cases:
+                rag_context = self._build_rag_context(retrieved_cases)
+                safe_message = (
+                    f"{rag_context}"
+                    f"위 참고 사례를 바탕으로 다음 민원에 대해 답변해 주세요.\n\n"
+                    f"{safe_message}"
+                )
+            augmented_prompt = self.agent_manager.build_prompt("generator", safe_message)
+        else:
+            augmented_prompt = request.prompt
+            if retrieved_cases:
+                augmented_prompt = self._augment_prompt(request.prompt, retrieved_cases)
+
+        # 3. vLLM Generation
         sampling_params = SamplingParams(
             temperature=request.temperature,
             top_p=request.top_p,
@@ -202,6 +233,7 @@ async def health():
     return {
         "status": "healthy",
         "rag_enabled": manager.index_manager is not None or manager.retriever is not None,
+        "agents_loaded": manager.agent_manager.list_agents() if manager.agent_manager else [],
         "indexes": index_summary,
     }
 
@@ -215,6 +247,57 @@ def _rate_limit(limit_string: str):
     def _noop(func):
         return func
     return _noop
+
+
+@app.post("/v1/classify", response_model=ClassifyResponse)
+@_rate_limit("60/minute")
+async def classify(request: ClassifyRequest, _: None = Depends(verify_api_key)):
+    """민원 분류 엔드포인트. classifier 에이전트 페르소나로 카테고리를 결정한다."""
+    if not manager.agent_manager or not manager.agent_manager.get_agent("classifier"):
+        raise HTTPException(status_code=503, detail="분류 에이전트가 로드되지 않았습니다.")
+
+    classifier = manager.agent_manager.get_agent("classifier")
+    safe_prompt = manager._escape_special_tokens(request.prompt)
+    classify_prompt = manager.agent_manager.build_prompt("classifier", safe_prompt)
+
+    request_id = str(uuid.uuid4())
+    sampling_params = SamplingParams(
+        temperature=classifier.temperature,
+        top_p=0.9,
+        max_tokens=classifier.max_tokens,
+    )
+
+    results_generator = manager.engine.generate(classify_prompt, sampling_params, request_id)
+
+    final_output = None
+    async for request_output in results_generator:
+        final_output = request_output
+
+    if final_output is None:
+        raise HTTPException(status_code=500, detail="분류 처리에 실패했습니다.")
+
+    response_text = final_output.outputs[0].text
+
+    classification = None
+    classification_error = None
+    try:
+        json_match = re.search(r"\{.*?\}", response_text, re.DOTALL)
+        if json_match:
+            classification = ClassificationResult.model_validate_json(json_match.group())
+        else:
+            classification_error = "LLM 응답에서 JSON 객체를 찾을 수 없습니다."
+            logger.warning(f"분류 JSON 파싱 실패 (request_id={request_id}): JSON 미발견")
+    except Exception as e:
+        classification_error = f"분류 결과 검증 실패: {e}"
+        logger.warning(f"분류 JSON 파싱 실패 (request_id={request_id}): {e}")
+
+    return ClassifyResponse(
+        request_id=request_id,
+        classification=classification,
+        classification_error=classification_error,
+        prompt_tokens=len(final_output.prompt_token_ids),
+        completion_tokens=len(final_output.outputs[0].token_ids),
+    )
 
 
 @app.post("/v1/generate", response_model=GenerateResponse)
