@@ -115,6 +115,11 @@ class vLLMEngineManager:
             text = text.replace(token, token.replace("[", "\\[").replace("]", "\\]").replace("<", "\\<").replace(">", "\\>"))
         return text
 
+    @staticmethod
+    def _strip_thought_blocks(text: str) -> str:
+        """LLM 출력에서 내부 추론 블록(<thought>...</thought>)을 제거한다."""
+        return re.sub(r"<thought>.*?</thought>\s*", "", text, flags=re.DOTALL).strip()
+
     def _build_rag_context(self, retrieved_cases: List[dict]) -> str:
         """RAG 참고 사례 컨텍스트 문자열을 생성한다."""
         if not retrieved_cases:
@@ -319,7 +324,7 @@ async def generate(request: GenerateRequest, _: None = Depends(verify_api_key)):
 
     return GenerateResponse(
         request_id=request_id,
-        text=final_output.outputs[0].text,
+        text=manager._strip_thought_blocks(final_output.outputs[0].text),
         prompt_tokens=len(final_output.prompt_token_ids),
         completion_tokens=len(final_output.outputs[0].token_ids),
         retrieved_cases=[RetrievedCase(**c) for c in retrieved_cases]
@@ -342,6 +347,8 @@ async def stream_generate(request: GenerateRequest, _: None = Depends(verify_api
         async for request_output in results_generator:
             text = request_output.outputs[0].text
             finished = request_output.finished
+            if finished:
+                text = manager._strip_thought_blocks(text)
 
             response_obj = {
                 "request_id": request_id,
