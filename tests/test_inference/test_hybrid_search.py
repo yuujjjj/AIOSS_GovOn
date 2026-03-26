@@ -296,18 +296,19 @@ class TestHybridSearchDense:
         engine: HybridSearchEngine,
         mock_bm25_indexer: mock.MagicMock,
     ) -> None:
-        results = await engine.search("테스트", IndexType.CASE, mode=SearchMode.DENSE)
+        results, actual_mode = await engine.search("테스트", IndexType.CASE, mode=SearchMode.DENSE)
         mock_bm25_indexer.search.assert_not_called()
         assert len(results) > 0
+        assert actual_mode == SearchMode.DENSE
 
     async def test_dense_returns_correct_structure(self, engine: HybridSearchEngine) -> None:
-        results = await engine.search("테스트", IndexType.CASE, mode=SearchMode.DENSE)
+        results, _ = await engine.search("테스트", IndexType.CASE, mode=SearchMode.DENSE)
         for r in results:
             assert "doc_id" in r
             assert "score" in r
 
     async def test_dense_respects_top_k(self, engine: HybridSearchEngine) -> None:
-        results = await engine.search("테스트", IndexType.CASE, top_k=3, mode=SearchMode.DENSE)
+        results, _ = await engine.search("테스트", IndexType.CASE, top_k=3, mode=SearchMode.DENSE)
         assert len(results) <= 3
 
     async def test_dense_calls_embed_model(
@@ -341,20 +342,21 @@ class TestHybridSearchSparse:
         engine: HybridSearchEngine,
         mock_index_manager: mock.MagicMock,
     ) -> None:
-        results = await engine.search("테스트", IndexType.CASE, mode=SearchMode.SPARSE)
+        results, actual_mode = await engine.search("테스트", IndexType.CASE, mode=SearchMode.SPARSE)
         mock_index_manager.search.assert_not_called()
         assert len(results) > 0
+        assert actual_mode == SearchMode.SPARSE
 
     async def test_sparse_maps_corpus_index_to_metadata(self, engine: HybridSearchEngine) -> None:
         """BM25가 반환한 corpus index가 metadata로 올바르게 매핑되는지 확인."""
-        results = await engine.search("테스트", IndexType.CASE, mode=SearchMode.SPARSE)
+        results, _ = await engine.search("테스트", IndexType.CASE, mode=SearchMode.SPARSE)
         for r in results:
             assert "doc_id" in r
             assert r["doc_id"].startswith("case-")
 
     async def test_sparse_result_scores_are_bm25_raw(self, engine: HybridSearchEngine) -> None:
         """sparse 모드에서 score가 BM25 원시 점수인지 확인."""
-        results = await engine.search("테스트", IndexType.CASE, mode=SearchMode.SPARSE)
+        results, _ = await engine.search("테스트", IndexType.CASE, mode=SearchMode.SPARSE)
         # BM25 mock이 반환한 점수: 5.2, 4.8, 3.5, 2.1, 1.5
         expected_scores = [5.2, 4.8, 3.5, 2.1, 1.5]
         actual_scores = [r["score"] for r in results]
@@ -371,7 +373,7 @@ class TestHybridSearchSparse:
             bm25_indexers={},  # 비어있음
             embed_model=mock_embed_model,
         )
-        results = await engine.search("테스트", IndexType.CASE, mode=SearchMode.SPARSE)
+        results, _ = await engine.search("테스트", IndexType.CASE, mode=SearchMode.SPARSE)
         assert results == []
 
     async def test_sparse_with_not_ready_indexer_returns_empty(
@@ -387,11 +389,11 @@ class TestHybridSearchSparse:
             bm25_indexers={IndexType.CASE: not_ready_indexer},
             embed_model=mock_embed_model,
         )
-        results = await engine.search("테스트", IndexType.CASE, mode=SearchMode.SPARSE)
+        results, _ = await engine.search("테스트", IndexType.CASE, mode=SearchMode.SPARSE)
         assert results == []
 
     async def test_sparse_respects_top_k(self, engine: HybridSearchEngine) -> None:
-        results = await engine.search("테스트", IndexType.CASE, top_k=2, mode=SearchMode.SPARSE)
+        results, _ = await engine.search("테스트", IndexType.CASE, top_k=2, mode=SearchMode.SPARSE)
         assert len(results) <= 2
 
 
@@ -408,13 +410,18 @@ class TestHybridSearchHybrid:
         mock_index_manager: mock.MagicMock,
         mock_bm25_indexer: mock.MagicMock,
     ) -> None:
-        results = await engine.search("테스트", IndexType.CASE, mode=SearchMode.HYBRID)
+        results, actual_mode = await engine.search(
+            "테스트", IndexType.CASE, mode=SearchMode.HYBRID
+        )
         mock_index_manager.search.assert_called_once()
         mock_bm25_indexer.search.assert_called_once()
         assert len(results) > 0
+        assert actual_mode == SearchMode.HYBRID
 
     async def test_hybrid_respects_top_k(self, engine: HybridSearchEngine) -> None:
-        results = await engine.search("테스트", IndexType.CASE, top_k=3, mode=SearchMode.HYBRID)
+        results, _ = await engine.search(
+            "테스트", IndexType.CASE, top_k=3, mode=SearchMode.HYBRID
+        )
         assert len(results) <= 3
 
     async def test_hybrid_fallback_to_dense_when_no_bm25(
@@ -428,9 +435,12 @@ class TestHybridSearchHybrid:
             bm25_indexers={},
             embed_model=mock_embed_model,
         )
-        results = await engine.search("테스트", IndexType.CASE, mode=SearchMode.HYBRID)
+        results, actual_mode = await engine.search(
+            "테스트", IndexType.CASE, mode=SearchMode.HYBRID
+        )
         # BM25 없으므로 dense 폴백
         assert len(results) > 0
+        assert actual_mode == SearchMode.DENSE
         mock_index_manager.search.assert_called_once()
 
     async def test_hybrid_fallback_when_bm25_not_ready(
@@ -446,20 +456,25 @@ class TestHybridSearchHybrid:
             bm25_indexers={IndexType.CASE: not_ready_indexer},
             embed_model=mock_embed_model,
         )
-        results = await engine.search("테스트", IndexType.CASE, mode=SearchMode.HYBRID)
+        results, actual_mode = await engine.search(
+            "테스트", IndexType.CASE, mode=SearchMode.HYBRID
+        )
         assert len(results) > 0
+        assert actual_mode == SearchMode.DENSE
         mock_index_manager.search.assert_called_once()
         not_ready_indexer.search.assert_not_called()
 
     async def test_hybrid_scores_in_0_to_1(self, engine: HybridSearchEngine) -> None:
-        results = await engine.search("테스트", IndexType.CASE, mode=SearchMode.HYBRID)
+        results, _ = await engine.search("테스트", IndexType.CASE, mode=SearchMode.HYBRID)
         for r in results:
             assert 0.0 <= r["score"] <= 1.0, f"score {r['score']} is out of [0, 1]"
 
     async def test_hybrid_merges_dense_and_sparse_docs(self, engine: HybridSearchEngine) -> None:
         """hybrid 결과에 dense와 sparse 양쪽의 문서가 포함되는지 확인."""
         # top_k를 충분히 크게 설정하여 모든 문서가 반환되도록 함
-        results = await engine.search("테스트", IndexType.CASE, top_k=10, mode=SearchMode.HYBRID)
+        results, _ = await engine.search(
+            "테스트", IndexType.CASE, top_k=10, mode=SearchMode.HYBRID
+        )
         doc_ids = {r["doc_id"] for r in results}
         # dense mock: case-000 ~ case-004, sparse mock: case-004, 002, 000, 007, 001
         # case-007은 sparse에만 존재
@@ -469,10 +484,11 @@ class TestHybridSearchHybrid:
 
     async def test_hybrid_default_mode(self, engine: HybridSearchEngine) -> None:
         """mode 파라미터 생략 시 기본값이 HYBRID인지 확인."""
-        results = await engine.search("테스트", IndexType.CASE)
+        results, actual_mode = await engine.search("테스트", IndexType.CASE)
         # hybrid는 RRF 정규화로 score가 0~1 범위
         for r in results:
             assert 0.0 <= r["score"] <= 1.0
+        assert actual_mode == SearchMode.HYBRID
 
 
 # ---------------------------------------------------------------------------
@@ -641,7 +657,7 @@ class TestErrorHandling:
             bm25_indexers={IndexType.CASE: failing_indexer},
             embed_model=mock_embed_model,
         )
-        results = await engine.search("테스트", IndexType.CASE, mode=SearchMode.SPARSE)
+        results, _ = await engine.search("테스트", IndexType.CASE, mode=SearchMode.SPARSE)
         assert results == []
 
     async def test_corpus_index_out_of_range_skipped(
@@ -659,7 +675,7 @@ class TestErrorHandling:
             bm25_indexers={IndexType.CASE: oob_indexer},
             embed_model=mock_embed_model,
         )
-        results = await engine.search("테스트", IndexType.CASE, mode=SearchMode.SPARSE)
+        results, _ = await engine.search("테스트", IndexType.CASE, mode=SearchMode.SPARSE)
         # 999는 건너뛰고 0만 포함
         assert len(results) == 1
         assert results[0]["doc_id"] == "case-000"

@@ -8,7 +8,7 @@ Issue: #154
 """
 
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -110,8 +110,8 @@ class TestSearchModeEndpoint:
             index_type: Any,
             top_k: int = 5,
             mode: Optional[SearchMode] = None,
-        ) -> List[Dict[str, Any]]:
-            return _make_fake_search_results(min(top_k, 5))
+        ) -> Tuple[List[Dict[str, Any]], SearchMode]:
+            return _make_fake_search_results(min(top_k, 5)), mode or SearchMode.HYBRID
 
         manager.hybrid_engine = MagicMock()
         manager.hybrid_engine.search = AsyncMock(side_effect=fake_search)
@@ -179,8 +179,8 @@ class TestBackwardCompatibility:
             index_type: Any,
             top_k: int = 5,
             mode: Optional[SearchMode] = None,
-        ) -> List[Dict[str, Any]]:
-            return _make_fake_search_results(min(top_k, 5))
+        ) -> Tuple[List[Dict[str, Any]], SearchMode]:
+            return _make_fake_search_results(min(top_k, 5)), mode or SearchMode.HYBRID
 
         manager.hybrid_engine = MagicMock()
         manager.hybrid_engine.search = AsyncMock(side_effect=fake_search)
@@ -264,8 +264,8 @@ class TestResponseStructure:
             index_type: Any,
             top_k: int = 5,
             mode: Optional[SearchMode] = None,
-        ) -> List[Dict[str, Any]]:
-            return _make_fake_search_results(min(top_k, 5))
+        ) -> Tuple[List[Dict[str, Any]], SearchMode]:
+            return _make_fake_search_results(min(top_k, 5)), mode or SearchMode.HYBRID
 
         manager.hybrid_engine = MagicMock()
         manager.hybrid_engine.search = AsyncMock(side_effect=fake_search)

@@ -136,6 +136,10 @@ class SearchResponse(BaseModel):
     query: str
     doc_type: IndexType
     search_mode: SearchMode = SearchMode.HYBRID
+    actual_search_mode: Optional[SearchMode] = Field(
+        default=None,
+        description="실제 사용된 검색 모드. 폴백 발생 시 search_mode와 다를 수 있다.",
+    )
     results: List["SearchResult"]
     total: int
     search_time_ms: Optional[float] = None

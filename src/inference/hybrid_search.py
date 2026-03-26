@@ -10,7 +10,7 @@ Issue: #154
 import asyncio
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 from loguru import logger
@@ -92,7 +92,7 @@ class HybridSearchEngine:
         index_type: IndexType,
         top_k: int = 5,
         mode: SearchMode = SearchMode.HYBRID,
-    ) -> List[Dict[str, Any]]:
+    ) -> Tuple[List[Dict[str, Any]], SearchMode]:
         """하이브리드 검색을 수행한다.
 
         Parameters
@@ -108,13 +108,14 @@ class HybridSearchEngine:
 
         Returns
         -------
-        List[Dict[str, Any]]
-            score(0~1 정규화)를 포함한 검색 결과 리스트.
+        Tuple[List[Dict[str, Any]], SearchMode]
+            score(0~1 정규화)를 포함한 검색 결과 리스트와 실제 사용된 검색 모드.
+            BM25 미준비 등으로 폴백이 발생하면 actual_mode가 요청 mode와 다를 수 있다.
         """
         if not query or not query.strip():
-            return []
+            return [], mode
         if top_k <= 0:
-            return []
+            return [], mode
 
         try:
             if mode == SearchMode.DENSE:
@@ -122,11 +123,11 @@ class HybridSearchEngine:
                     raise RuntimeError("Dense 검색에는 embed_model이 필요합니다.")
                 query_vector = self._embed_query(query)
                 results = await self._dense_search(query_vector, index_type, top_k)
-                return results[:top_k]
+                return results[:top_k], SearchMode.DENSE
 
             if mode == SearchMode.SPARSE:
                 results = await self._sparse_search(query, index_type, top_k)
-                return results[:top_k]
+                return results[:top_k], SearchMode.SPARSE
 
             # HYBRID 모드
             if self.embed_model is None:
@@ -140,22 +141,57 @@ class HybridSearchEngine:
                 )
                 query_vector = self._embed_query(query)
                 results = await self._dense_search(query_vector, index_type, top_k)
-                return results[:top_k]
+                return results[:top_k], SearchMode.DENSE
 
             query_vector = self._embed_query(query)
-            dense_results, sparse_results = await asyncio.gather(
+            dense_result, sparse_result = await asyncio.gather(
                 self._dense_search(query_vector, index_type, top_k),
                 self._sparse_search(query, index_type, top_k),
+                return_exceptions=True,
             )
 
+            dense_failed = isinstance(dense_result, BaseException)
+            sparse_failed = isinstance(sparse_result, BaseException)
+
+            if dense_failed and sparse_failed:
+                logger.error(
+                    f"Hybrid 검색 양측 모두 실패 (type={index_type.value}): "
+                    f"dense={dense_result}, sparse={sparse_result}"
+                )
+                raise RuntimeError(
+                    f"Dense 및 Sparse 검색 모두 실패: "
+                    f"dense={dense_result}, sparse={sparse_result}"
+                )
+
+            if dense_failed:
+                logger.warning(
+                    f"Dense 검색 실패, Sparse 결과로 대체합니다 "
+                    f"(type={index_type.value}): {dense_result}"
+                )
+                dense_results: List[Dict[str, Any]] = []
+                sparse_results: List[Dict[str, Any]] = sparse_result
+                actual_mode = SearchMode.SPARSE
+            elif sparse_failed:
+                logger.warning(
+                    f"Sparse 검색 실패, Dense 결과로 대체합니다 "
+                    f"(type={index_type.value}): {sparse_result}"
+                )
+                dense_results = dense_result
+                sparse_results = []
+                actual_mode = SearchMode.DENSE
+            else:
+                dense_results = dense_result
+                sparse_results = sparse_result
+                actual_mode = SearchMode.HYBRID
+
             fused = self._reciprocal_rank_fusion(dense_results, sparse_results, index_type)
-            return fused[:top_k]
+            return fused[:top_k], actual_mode
 
         except RuntimeError:
             raise
         except Exception as e:
             logger.error(f"검색 중 오류 발생 (type={index_type.value}, mode={mode.value}): {e}")
-            return []
+            return [], mode
 
     async def _dense_search(
         self,

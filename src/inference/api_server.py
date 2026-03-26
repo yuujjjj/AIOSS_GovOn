@@ -88,6 +88,7 @@ class vLLMEngineManager:
         self.hybrid_engine: Optional[HybridSearchEngine] = None
         self.bm25_indexers: dict = {}
         self.embed_model = None
+        self.pii_masker = None
 
     async def initialize(self):
         # 1. Initialize Optimized vLLM Engine
@@ -164,6 +165,16 @@ class vLLMEngineManager:
             )
         else:
             logger.warning("HybridSearchEngine 미초기화: index_manager 또는 embed_model 없음")
+
+        # 6. Initialize PII Masker (검색 결과 개인정보 마스킹용)
+        try:
+            from src.data_collection_preprocessing.pii_masking import PIIMasker
+
+            self.pii_masker = PIIMasker.create_strict_masker()
+            logger.info("PIIMasker 초기화 완료 (검색 결과 PII 마스킹 활성)")
+        except Exception as e:
+            logger.warning(f"PIIMasker 초기화 실패 — 검색 결과 PII 마스킹이 비활성화됩니다: {e}")
+            self.pii_masker = None
 
     def _escape_special_tokens(self, text: str) -> str:
         """Escape EXAONE chat template tokens to prevent prompt injection."""
@@ -302,11 +313,23 @@ async def health():
             }
             for idx_type, info in stats.get("indexes", {}).items()
         }
+    # BM25 인덱스 상태
+    bm25_summary = {}
+    for idx_type in IndexType:
+        indexer = manager.bm25_indexers.get(idx_type)
+        if indexer and indexer.is_ready():
+            bm25_summary[idx_type.value] = {"loaded": True, "doc_count": indexer.doc_count}
+        else:
+            bm25_summary[idx_type.value] = {"loaded": False}
+
     return {
         "status": "healthy",
         "rag_enabled": manager.index_manager is not None or manager.retriever is not None,
         "agents_loaded": manager.agent_manager.list_agents() if manager.agent_manager else [],
         "indexes": index_summary,
+        "bm25_indexes": bm25_summary,
+        "hybrid_search_enabled": manager.hybrid_engine is not None,
+        "pii_masking_enabled": manager.pii_masker is not None,
     }
 
 
@@ -426,6 +449,50 @@ async def stream_generate(request: GenerateRequest, _: None = Depends(verify_api
     return StreamingResponse(stream_results(), media_type="text/event-stream")
 
 
+def _extract_content_by_type(result: dict, index_type: IndexType) -> str:
+    """인덱스 타입별로 적절한 content 텍스트를 추출한다.
+
+    Parameters
+    ----------
+    result : dict
+        검색 결과 딕셔너리 (extras 포함).
+    index_type : IndexType
+        검색 대상 문서 타입.
+
+    Returns
+    -------
+    str
+        추출된 content 텍스트. 비어있으면 title을 폴백으로 반환한다.
+    """
+    extras = result.get("extras", {})
+    if index_type == IndexType.CASE:
+        text = (extras.get("complaint_text", "") + "\n" + extras.get("answer_text", "")).strip()
+    elif index_type == IndexType.LAW:
+        text = extras.get("law_text", "") or extras.get("content", "")
+    elif index_type == IndexType.MANUAL:
+        text = extras.get("manual_text", "") or extras.get("content", "")
+    elif index_type == IndexType.NOTICE:
+        text = extras.get("notice_text", "") or extras.get("content", "")
+    else:
+        text = ""
+    return text or result.get("title", "")
+
+
+def _mask_search_results(
+    results: List[SearchResult], masker: Optional[object]
+) -> List[SearchResult]:
+    """검색 결과 내 PII(개인식별정보)를 마스킹한다."""
+    if masker is None:
+        return results
+    for r in results:
+        r.content = masker.mask_all(r.content)
+        # metadata 내 텍스트 필드도 마스킹
+        for key in ("complaint_text", "answer_text", "complaint", "answer"):
+            if key in r.metadata and isinstance(r.metadata[key], str):
+                r.metadata[key] = masker.mask_all(r.metadata[key])
+    return results
+
+
 # --- S-1: /search 엔드포인트 ---
 # NOTE: slowapi는 경로별 별도 버킷으로 rate limit을 추적합니다.
 # /v1/search와 /search 각각 60/minute으로 제한됩니다.
@@ -438,7 +505,7 @@ async def search(request: SearchRequest, req: Request, _: None = Depends(verify_
     try:
         # HybridSearchEngine 사용
         if manager.hybrid_engine:
-            results_raw = await manager.hybrid_engine.search(
+            results_raw, actual_mode = await manager.hybrid_engine.search(
                 query=request.query,
                 index_type=request.doc_type,
                 top_k=request.top_k,
@@ -449,12 +516,7 @@ async def search(request: SearchRequest, req: Request, _: None = Depends(verify_
                     doc_id=r.get("doc_id", ""),
                     source_type=IndexType(r.get("doc_type", request.doc_type.value)),
                     title=r.get("title", ""),
-                    content=(
-                        r.get("extras", {}).get("complaint_text", "")
-                        + "\n"
-                        + r.get("extras", {}).get("answer_text", "")
-                    ).strip()
-                    or r.get("title", ""),
+                    content=_extract_content_by_type(r, request.doc_type),
                     score=r.get("score", 0.0),
                     reliability_score=r.get("reliability_score", 1.0),
                     metadata=r.get("extras", {}),
@@ -463,7 +525,6 @@ async def search(request: SearchRequest, req: Request, _: None = Depends(verify_
                 )
                 for r in results_raw
             ]
-            actual_mode = request.search_mode
         # 레거시 폴백: retriever 사용
         elif manager.retriever:
             raw_results = manager.retriever.search(request.query, top_k=request.top_k)
@@ -485,11 +546,17 @@ async def search(request: SearchRequest, req: Request, _: None = Depends(verify_
                 detail="검색 엔진이 아직 초기화되지 않았습니다.",
             )
 
+        # PII 마스킹: 검색 결과 내 개인정보를 마스킹하여 반환
+        results = _mask_search_results(results, manager.pii_masker)
+
         elapsed_ms = (time.monotonic() - start_time) * 1000
+        # 폴백이 발생한 경우에만 actual_search_mode를 설정
+        actual_search_mode = actual_mode if actual_mode != request.search_mode else None
         return SearchResponse(
             query=request.query,
             doc_type=request.doc_type,
             search_mode=actual_mode,
+            actual_search_mode=actual_search_mode,
             results=results,
             total=len(results),
             search_time_ms=round(elapsed_ms, 2),
