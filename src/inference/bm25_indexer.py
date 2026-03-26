@@ -24,21 +24,45 @@ import hmac
 import json
 import os
 import pickle
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
 
 import numpy as np
 from loguru import logger
 from rank_bm25 import BM25Okapi
 
-
 # Minimal Korean stopwords relevant to civil complaints
 # Defined before KoreanTokenizer to avoid forward-reference maintenance hazard.
-_STOPWORDS = frozenset({
-    "이다", "있다", "하다", "되다", "없다", "않다", "이런", "저런", "그런",
-    "합니다", "입니다", "습니다", "됩니다", "있습니다", "없습니다",
-    "에서", "으로", "에게", "까지", "부터", "에서는", "으로는",
-    "그리고", "하지만", "그러나", "따라서", "그래서",
-})
+_STOPWORDS = frozenset(
+    {
+        "이다",
+        "있다",
+        "하다",
+        "되다",
+        "없다",
+        "않다",
+        "이런",
+        "저런",
+        "그런",
+        "합니다",
+        "입니다",
+        "습니다",
+        "됩니다",
+        "있습니다",
+        "없습니다",
+        "에서",
+        "으로",
+        "에게",
+        "까지",
+        "부터",
+        "에서는",
+        "으로는",
+        "그리고",
+        "하지만",
+        "그러나",
+        "따라서",
+        "그래서",
+    }
+)
 
 
 class KoreanTokenizer:
@@ -60,6 +84,7 @@ class KoreanTokenizer:
         if tokenizer_type in ("mecab", "auto"):
             try:
                 from konlpy.tag import Mecab
+
                 self._tagger = Mecab()
                 self.tokenizer_type = "mecab"
                 logger.info("Tokenizer initialized: Mecab")
@@ -74,6 +99,7 @@ class KoreanTokenizer:
         # Okt path
         try:
             from konlpy.tag import Okt
+
             self._tagger = Okt()
             self.tokenizer_type = "okt"
             logger.info("Tokenizer initialized: Okt")
@@ -211,10 +237,10 @@ class BM25Indexer:
                             text = raw
                     elif "complaint" in item:
                         text = item["complaint"]
+                    elif "input" in item:
+                        text = item["input"]
                     else:
-                        text = self._extract_complaint_from_template(
-                            item.get("text", "")
-                        )
+                        text = self._extract_complaint_from_template(item.get("text", ""))
                     # Ensure text is always a string
                     if not isinstance(text, str):
                         text = str(text) if text is not None else ""
@@ -282,11 +308,7 @@ class BM25Indexer:
         top_indices = np.argpartition(scores, -actual_k)[-actual_k:]
         top_indices = top_indices[np.argsort(scores[top_indices])[::-1]]
 
-        results = [
-            (int(idx), float(scores[idx]))
-            for idx in top_indices
-            if scores[idx] > 0.0
-        ]
+        results = [(int(idx), float(scores[idx])) for idx in top_indices if scores[idx] > 0.0]
         return results
 
     # ------------------------------------------------------------------
@@ -369,9 +391,7 @@ class BM25Indexer:
                 )
             with open(sig_path, "r", encoding="utf-8") as sf:
                 expected_sig = sf.read().strip()
-            actual_sig = hmac.new(
-                hmac_key.encode(), data, hashlib.sha256
-            ).hexdigest()
+            actual_sig = hmac.new(hmac_key.encode(), data, hashlib.sha256).hexdigest()
             if not hmac.compare_digest(actual_sig, expected_sig):
                 raise ValueError(
                     "BM25 index HMAC verification failed — file may be tampered. "
@@ -398,8 +418,7 @@ class BM25Indexer:
             self._doc_count = payload["doc_count"]
         except (KeyError, TypeError) as e:
             raise ValueError(
-                f"BM25 index file has incompatible schema (missing key: {e}). "
-                "Rebuild the index."
+                f"BM25 index file has incompatible schema (missing key: {e}). " "Rebuild the index."
             ) from e
 
         saved_tokenizer = payload.get("tokenizer_type", "unknown")

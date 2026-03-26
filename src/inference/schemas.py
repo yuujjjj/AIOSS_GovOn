@@ -1,9 +1,11 @@
 from datetime import datetime
-from typing import List, Literal, Optional, Dict, Any
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from src.inference.hybrid_search import SearchMode
 from src.inference.index_manager import DocumentMetadata, IndexType
+
 
 class RetrievedCase(BaseModel):
     id: Optional[str] = None
@@ -12,14 +14,22 @@ class RetrievedCase(BaseModel):
     answer: str
     score: float
 
+
 class GenerateRequest(BaseModel):
-    prompt: str = Field(..., min_length=1, max_length=10000, description="The input prompt for generation.")
-    max_tokens: int = Field(default=512, gt=0, le=4096, description="Maximum number of tokens to generate.")
+    prompt: str = Field(
+        ..., min_length=1, max_length=10000, description="The input prompt for generation."
+    )
+    max_tokens: int = Field(
+        default=512, gt=0, le=4096, description="Maximum number of tokens to generate."
+    )
     temperature: float = Field(default=0.7, ge=0.0, le=2.0, description="Sampling temperature.")
     top_p: float = Field(default=0.9, ge=0.0, le=1.0, description="Top-p sampling parameter.")
     stream: bool = Field(default=False, description="Whether to stream the output using SSE.")
     stop: Optional[List[str]] = Field(default=None, description="List of stop sequences.")
-    use_rag: bool = Field(default=True, description="Whether to use RAG (Retrieval-Augmented Generation).")
+    use_rag: bool = Field(
+        default=True, description="Whether to use RAG (Retrieval-Augmented Generation)."
+    )
+
 
 class GenerateResponse(BaseModel):
     request_id: str
@@ -28,6 +38,7 @@ class GenerateResponse(BaseModel):
     completion_tokens: int
     retrieved_cases: Optional[List[RetrievedCase]] = None
     search_results: Optional[List["SearchResult"]] = None
+
 
 class StreamResponse(BaseModel):
     request_id: str
@@ -84,7 +95,7 @@ class DocumentMetadataSchema(BaseModel):
 
     doc_id: str
     source_type: IndexType  # CASE, LAW, MANUAL, NOTICE
-    source_id: str          # 원본 문서 식별자
+    source_id: str  # 원본 문서 식별자
     title: str
     content: str
     chunk_index: int = 0
@@ -113,6 +124,10 @@ class SearchRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=2000, description="검색 쿼리 텍스트")
     doc_type: IndexType = Field(default=IndexType.CASE, description="검색 대상 문서 타입")
     top_k: int = Field(default=5, gt=0, le=50, description="반환할 최대 결과 수")
+    search_mode: SearchMode = Field(
+        default=SearchMode.HYBRID,
+        description="검색 모드: dense (의미 검색), sparse (키워드 검색), hybrid (하이브리드)",
+    )
 
 
 class SearchResponse(BaseModel):
@@ -120,8 +135,14 @@ class SearchResponse(BaseModel):
 
     query: str
     doc_type: IndexType
+    search_mode: SearchMode = SearchMode.HYBRID
+    actual_search_mode: Optional[SearchMode] = Field(
+        default=None,
+        description="실제 사용된 검색 모드. 폴백 발생 시 search_mode와 다를 수 있다.",
+    )
     results: List["SearchResult"]
     total: int
+    search_time_ms: Optional[float] = None
 
 
 class SearchResult(BaseModel):
@@ -176,16 +197,8 @@ def from_internal_metadata(
         total_chunks=meta.chunk_total,
         created_at=datetime.fromisoformat(meta.created_at),
         updated_at=datetime.fromisoformat(meta.updated_at),
-        valid_from=(
-            datetime.fromisoformat(meta.valid_from)
-            if meta.valid_from
-            else None
-        ),
-        valid_until=(
-            datetime.fromisoformat(meta.valid_until)
-            if meta.valid_until
-            else None
-        ),
+        valid_from=(datetime.fromisoformat(meta.valid_from) if meta.valid_from else None),
+        valid_until=(datetime.fromisoformat(meta.valid_until) if meta.valid_until else None),
         reliability_score=meta.reliability_score,
         metadata=meta.extras if meta.extras else {},
     )
