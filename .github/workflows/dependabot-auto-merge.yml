@@ -21,14 +21,15 @@ jobs:
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
-      - name: Approve PR
+      - name: Approve PR (CODEOWNER)
         if: steps.metadata.outputs.package-ecosystem == 'github_actions' || steps.metadata.outputs.update-type != 'version-update:semver-major'
         run: |
           gh pr review "${{ github.event.pull_request.number }}" \
             --approve \
+            --body "Dependabot 자동 승인 (CODEOWNER)" \
             --repo "${{ github.repository }}"
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.REVIEWER_TOKEN }}
 
       - name: Auto-merge (GitHub Actions — all versions)
         if: steps.metadata.outputs.package-ecosystem == 'github_actions'
