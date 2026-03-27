@@ -1,3 +1,9 @@
+# CI Workflow for GovOn
+#
+# Secrets used in this workflow:
+#   - CODECOV_TOKEN  : Codecov upload token (used in test job)
+#   - DEPLOY_TOKEN   : Deployment authentication token (used in deploy job)
+
 name: CI
 
 on:
@@ -30,6 +36,9 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  # ──────────────────────────────────────────────
+  # 1. Lint — 코드 스타일 검사 (단일 환경)
+  # ──────────────────────────────────────────────
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -60,8 +69,17 @@ jobs:
         continue-on-error: true
         run: uv run flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=.venv,.git,__pycache__,build,dist
 
+  # ──────────────────────────────────────────────
+  # 2. Test — 매트릭스 전략으로 다중 환경 테스트
+  # ──────────────────────────────────────────────
   test:
-    runs-on: ubuntu-latest
+    needs: [lint]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11"]
+        os: ["ubuntu-latest", "ubuntu-22.04"]
     steps:
       - uses: actions/checkout@v6
 
@@ -71,8 +89,8 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
-      - name: Set up Python
-        run: uv python install 3.10
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
 
       - name: Install dependencies
         run: |
@@ -104,6 +122,97 @@ jobs:
           file: ./coverage.xml
           fail_ci_if_error: false
 
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: ./coverage.xml
+          retention-days: 7
+
       - name: Test Summary
         if: always()
-        run: echo "### Test Results" >> $GITHUB_STEP_SUMMARY
+        run: echo "### Test Results (${{ matrix.os }}, Python ${{ matrix.python-version }})" >> $GITHUB_STEP_SUMMARY
+
+  # ──────────────────────────────────────────────
+  # 3. Build — 패키지 빌드 및 아티팩트 업로드
+  # ──────────────────────────────────────────────
+  build:
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python
+        run: uv python install 3.10
+
+      - name: Install dependencies
+        run: |
+          uv sync --all-extras
+
+      - name: Build package
+        run: uv build
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-package
+          path: dist/
+          retention-days: 14
+
+      - name: Build Summary
+        run: |
+          echo "### Build Artifacts" >> $GITHUB_STEP_SUMMARY
+          ls -lh dist/ >> $GITHUB_STEP_SUMMARY
+
+  # ──────────────────────────────────────────────
+  # 4. Deploy — 배포 (main 브랜치에서만 실제 배포)
+  # ──────────────────────────────────────────────
+  deploy:
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-package
+          path: dist/
+
+      - name: Verify artifact
+        run: |
+          echo "### Deploy Artifact Verification" >> $GITHUB_STEP_SUMMARY
+          echo "Downloaded artifacts:" >> $GITHUB_STEP_SUMMARY
+          ls -lh dist/ | tee -a $GITHUB_STEP_SUMMARY
+
+      - name: Dry-run deploy (PR)
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "=== Dry-run deploy (PR #${{ github.event.number }}) ==="
+          echo "Would deploy the following artifacts:"
+          ls -lh dist/
+          echo "Dry-run complete. No actual deployment performed."
+
+      - name: Deploy to production
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
+        run: |
+          echo "=== Deploying to production ==="
+          echo "Branch: ${{ github.ref }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Artifacts:"
+          ls -lh dist/
+          echo ""
+          if [ -n "$DEPLOY_TOKEN" ]; then
+            echo "DEPLOY_TOKEN is configured. Proceeding with deployment..."
+          else
+            echo "WARNING: DEPLOY_TOKEN is not set. Skipping authenticated deployment."
+          fi
+          echo "Production deployment placeholder complete."
