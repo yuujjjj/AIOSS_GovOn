@@ -97,6 +97,47 @@ class PersonaEvaluator:
                 "num_passed": 0,
             }
 
+        # 빈 문자열 필터링 — BERTScore/ROUGE-L에 빈 문자열이 들어가면 0점 처리됨
+        filtered_gens = []
+        filtered_refs = []
+        empty_ref_count = 0
+        empty_gen_count = 0
+
+        for gen, ref in zip(generations, references):
+            if not ref.strip():
+                empty_ref_count += 1
+                continue
+            if not gen.strip():
+                empty_gen_count += 1
+                continue
+            filtered_gens.append(gen)
+            filtered_refs.append(ref)
+
+        total_input = len(generations)
+        if empty_ref_count > 0:
+            pct = empty_ref_count / total_input * 100
+            logger.warning(
+                f"빈 참조 문장 {empty_ref_count}건 감지 ({pct:.1f}%) — 평가에서 제외"
+            )
+        if empty_gen_count > 0:
+            pct = empty_gen_count / total_input * 100
+            logger.warning(
+                f"빈 생성 문장 {empty_gen_count}건 감지 ({pct:.1f}%) — 평가에서 제외"
+            )
+
+        if not filtered_gens:
+            logger.error("필터링 후 유효한 평가 샘플이 없습니다.")
+            return {
+                "bert_score_f1": {"mean": 0.0, "median": 0.0, "std": 0.0},
+                "rouge_l": {"mean": 0.0, "median": 0.0, "std": 0.0},
+                "acceptance_rate": 0.0,
+                "num_samples": 0,
+                "num_passed": 0,
+            }
+
+        generations = filtered_gens
+        references = filtered_refs
+
         # BERTScore 배치 계산
         logger.info(f"BERTScore 배치 계산 중 ({len(generations)}건)...")
         P, R, F1 = bert_score.score(generations, references, lang=self.lang)

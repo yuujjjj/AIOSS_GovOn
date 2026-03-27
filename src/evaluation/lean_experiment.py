@@ -7,6 +7,7 @@ BERTScore F1 >= 0.70 기준으로 Pivot/Persevere 판단을 자동화한다.
 import argparse
 import json
 import os
+import re
 import time
 from datetime import datetime
 from pathlib import Path
@@ -82,23 +83,86 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _parse_exaone_chat(text: str) -> tuple[str, str]:
+    """EXAONE 채팅 템플릿에서 사용자 입력과 어시스턴트 응답을 추출.
+
+    v2_test.jsonl의 text 필드는 EXAONE 채팅 템플릿 형식:
+      [|system|]...[|endofturn|]
+      [|user|]...[|endofturn|]
+      [|assistant|]...[|endofturn|]
+
+    Args:
+        text: EXAONE 채팅 템플릿 전체 텍스트
+
+    Returns:
+        (user_input, assistant_answer) 튜플. 파싱 실패 시 빈 문자열 반환.
+    """
+    user_match = re.search(
+        r"\[\|user\|\](.*?)\[\|endofturn\|\]", text, re.DOTALL
+    )
+    assistant_match = re.search(
+        r"\[\|assistant\|\](.*?)\[\|endofturn\|\]", text, re.DOTALL
+    )
+
+    user_input = user_match.group(1).strip() if user_match else ""
+    assistant_answer = assistant_match.group(1).strip() if assistant_match else ""
+
+    return user_input, assistant_answer
+
+
 def load_test_data(data_path: str, max_samples: int | None = None) -> list[dict]:
-    """v2_test.jsonl 로드."""
+    """v2_test.jsonl 로드 및 EXAONE 채팅 템플릿 파싱.
+
+    v2 데이터는 input/output 필드가 없고, text 필드에 EXAONE 채팅 템플릿이
+    포함되어 있으므로 파싱하여 input/output 필드를 추가한다.
+    """
     if not os.path.exists(data_path):
         logger.error(f"테스트 데이터를 찾을 수 없습니다: {data_path}")
         raise FileNotFoundError(f"테스트 데이터 경로 없음: {data_path}")
 
     test_data = []
+    empty_ref_count = 0
+    empty_input_count = 0
+
     with open(data_path, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
-            if line:
-                test_data.append(json.loads(line))
+            if not line:
+                continue
+            item = json.loads(line)
+
+            # input/output 필드가 없으면 text 필드에서 파싱
+            if "input" not in item or "output" not in item:
+                text = item.get("text", "")
+                user_input, assistant_answer = _parse_exaone_chat(text)
+                item["input"] = user_input
+                item["output"] = assistant_answer
+
+            if not item.get("output", "").strip():
+                empty_ref_count += 1
+            if not item.get("input", "").strip():
+                empty_input_count += 1
+
+            test_data.append(item)
 
     if max_samples is not None:
         test_data = test_data[:max_samples]
 
-    logger.info(f"테스트 데이터 {len(test_data)}건 로드 완료")
+    total = len(test_data)
+    if empty_ref_count > 0:
+        pct = empty_ref_count / max(total, 1) * 100
+        logger.warning(
+            f"빈 참조 답변 {empty_ref_count}건 감지 ({pct:.1f}%) - "
+            f"평가 정확도에 영향을 줄 수 있습니다."
+        )
+    if empty_input_count > 0:
+        pct = empty_input_count / max(total, 1) * 100
+        logger.warning(
+            f"빈 입력 텍스트 {empty_input_count}건 감지 ({pct:.1f}%) - "
+            f"모델 생성 품질에 영향을 줄 수 있습니다."
+        )
+
+    logger.info(f"테스트 데이터 {total}건 로드 완료")
     return test_data
 
 
@@ -207,12 +271,29 @@ def run_condition(
     generations = []
     references = []
     latencies = []
+    skipped_empty_ref = 0
+    skipped_empty_gen = 0
 
     for idx, item in enumerate(test_data):
-        input_text = item.get("input") or item.get("text", "")[:500]
-        ref_text = item.get("output") or item.get("answer", "")
+        input_text = item.get("input", "")
+        ref_text = item.get("output", "")
+
+        # 빈 참조 답변은 평가 불가 — 건너뛰기
+        if not ref_text.strip():
+            skipped_empty_ref += 1
+            continue
+
+        # 빈 입력은 의미있는 생성 불가 — 건너뛰기
+        if not input_text.strip():
+            skipped_empty_ref += 1
+            continue
 
         generated, latency = generate_answer(model, tokenizer, input_text, use_rag=use_rag)
+
+        # 빈 생성 결과 건너뛰기
+        if not generated.strip():
+            skipped_empty_gen += 1
+            continue
 
         generations.append(generated)
         references.append(ref_text.strip())
@@ -220,6 +301,35 @@ def run_condition(
 
         if (idx + 1) % 100 == 0:
             logger.info(f"[{condition_name}] {idx + 1}/{len(test_data)} 처리 완료")
+
+    if skipped_empty_ref > 0:
+        logger.warning(
+            f"[{condition_name}] 빈 참조/입력으로 건너뛴 샘플: {skipped_empty_ref}건"
+        )
+    if skipped_empty_gen > 0:
+        logger.warning(
+            f"[{condition_name}] 빈 생성 결과로 건너뛴 샘플: {skipped_empty_gen}건"
+        )
+
+    if not generations:
+        logger.error(f"[{condition_name}] 유효한 평가 샘플이 없습니다.")
+        return {
+            "condition": condition_name,
+            "use_rag": use_rag,
+            "num_samples": 0,
+            "metrics": {
+                "bert_score_f1": {"mean": 0.0, "median": 0.0, "std": 0.0, "min": 0.0, "max": 0.0},
+                "rouge_l": {"mean": 0.0, "median": 0.0, "std": 0.0, "min": 0.0, "max": 0.0},
+                "latency": {"mean": 0.0, "median": 0.0, "std": 0.0},
+            },
+            "acceptance_rate": 0.0,
+            "bert_f1_scores": [],
+            "rouge_l_scores": [],
+        }
+
+    logger.info(
+        f"[{condition_name}] 유효 샘플 {len(generations)}/{len(test_data)}건으로 평가 진행"
+    )
 
     # BERTScore 계산
     logger.info(f"[{condition_name}] BERTScore 계산 중...")
