@@ -65,7 +65,8 @@ jobs:
           WANDB_PROJECT: "GovOn"
         run: |
           uv run python -m src.evaluation.lean_experiment \
-            --output_dir experiment_results
+            --output_dir experiment_results \
+            --max_samples 300
 
       - name: Post Experiment Results to PR
         if: github.event_name == 'pull_request'

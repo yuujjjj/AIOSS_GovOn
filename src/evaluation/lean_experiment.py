@@ -7,8 +7,10 @@ BERTScore F1 >= 0.70 기준으로 Pivot/Persevere 판단을 자동화한다.
 import argparse
 import json
 import os
+import random
 import re
 import time
+from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
@@ -110,6 +112,43 @@ def _parse_exaone_chat(text: str) -> tuple[str, str]:
     return user_input, assistant_answer
 
 
+def _stratified_sample(data: list[dict], n: int, seed: int = 42) -> list[dict]:
+    """카테고리 비율을 유지하는 층화 추출.
+
+    각 카테고리에서 원본 비율에 비례한 수만큼 랜덤 샘플링하여
+    대표성 있는 축소 데이터셋을 반환한다.
+    """
+    rng = random.Random(seed)
+    by_category = defaultdict(list)
+    for item in data:
+        by_category[item.get("category", "unknown")].append(item)
+
+    total = len(data)
+    sampled = []
+    remainder_pool = []
+
+    for cat, items in by_category.items():
+        proportion = len(items) / total
+        count = int(n * proportion)
+        count = max(count, 1)  # 최소 1건 보장
+        picked = rng.sample(items, min(count, len(items)))
+        sampled.extend(picked)
+        leftover = [x for x in items if x not in picked]
+        remainder_pool.extend(leftover)
+
+    # 반올림 오차로 부족한 수량을 나머지에서 채움
+    shortfall = n - len(sampled)
+    if shortfall > 0 and remainder_pool:
+        sampled.extend(rng.sample(remainder_pool, min(shortfall, len(remainder_pool))))
+
+    rng.shuffle(sampled)
+    logger.info(
+        f"층화 추출: {total}건 → {len(sampled)}건 "
+        f"(카테고리 {len(by_category)}개 비율 유지)"
+    )
+    return sampled
+
+
 def load_test_data(data_path: str, max_samples: int | None = None) -> list[dict]:
     """v2_test.jsonl 로드 및 EXAONE 채팅 템플릿 파싱.
 
@@ -145,8 +184,8 @@ def load_test_data(data_path: str, max_samples: int | None = None) -> list[dict]
 
             test_data.append(item)
 
-    if max_samples is not None:
-        test_data = test_data[:max_samples]
+    if max_samples is not None and max_samples < len(test_data):
+        test_data = _stratified_sample(test_data, max_samples)
 
     total = len(test_data)
     if empty_ref_count > 0:
