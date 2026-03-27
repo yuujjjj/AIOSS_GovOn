@@ -21,8 +21,27 @@ jobs:
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
-      - name: Auto-merge minor and patch updates
-        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+      - name: Auto-merge (GitHub Actions — all versions)
+        if: steps.metadata.outputs.package-ecosystem == 'github_actions'
+        run: |
+          gh pr merge "${{ github.event.pull_request.number }}" \
+            --auto --merge \
+            --repo "${{ github.repository }}"
+
+          echo "### Dependabot Auto-Merge" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Package | ${{ steps.metadata.outputs.dependency-names }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Update Type | ${{ steps.metadata.outputs.update-type }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Previous Version | ${{ steps.metadata.outputs.previous-version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| New Version | ${{ steps.metadata.outputs.new-version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Auto-merge | ✅ Enabled (GitHub Actions) |" >> $GITHUB_STEP_SUMMARY
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Auto-merge (pip/docker — minor and patch only)
+        if: steps.metadata.outputs.package-ecosystem != 'github_actions' && steps.metadata.outputs.update-type != 'version-update:semver-major'
         run: |
           gh pr merge "${{ github.event.pull_request.number }}" \
             --auto --merge \
@@ -40,8 +59,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Skip major updates
-        if: steps.metadata.outputs.update-type == 'version-update:semver-major'
+      - name: Skip major updates (pip/docker only)
+        if: steps.metadata.outputs.package-ecosystem != 'github_actions' && steps.metadata.outputs.update-type == 'version-update:semver-major'
         run: |
           echo "### Dependabot Auto-Merge" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
