@@ -17,18 +17,21 @@ from src.inference.index_manager import DocumentMetadata, IndexType
 # 모든 테스트에서 토크나이저 로딩을 차단 (EXAONE 다운로드 방지)
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(autouse=True)
 def _no_tokenizer():
-    """모든 테스트에서 토크나이저를 None으로 고정 (폴백 모드)."""
+    """모든 테스트에서 토크나이저를 폴백 모드로 고정."""
     import src.inference.document_processor as dp
+
     original = dp._tokenizer
-    dp._tokenizer = None  # 글로벌 캐시 초기화
+    dp._tokenizer = dp._LOAD_FAILED  # 센티널: 로드 시도 차단
     with patch.object(dp, "_get_tokenizer", return_value=None):
         yield
     dp._tokenizer = original
 
 
 from src.inference.document_processor import (
+    BatchResult,
     DocumentProcessor,
     _chunk_fixed,
     _clean_text,
@@ -69,6 +72,14 @@ def tmp_empty_txt(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
+def tmp_header_only_txt(tmp_path: Path) -> Path:
+    """정제 후 빈 문서가 되는 파일 (페이지 번호만)."""
+    p = tmp_path / "header_only.txt"
+    p.write_text(" - 1 - \n - 2 - \n - 3 - ", encoding="utf-8")
+    return p
+
+
+@pytest.fixture
 def tmp_pdf(tmp_path: Path) -> Path:
     p = tmp_path / "sample.pdf"
     p.touch()
@@ -84,7 +95,7 @@ def tmp_hwp(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def processor() -> DocumentProcessor:
-    return DocumentProcessor(chunk_size=512, chunk_overlap=64, min_chunk_tokens=50)
+    return DocumentProcessor(chunk_size=512, chunk_overlap=128, min_chunk_tokens=50)
 
 
 @pytest.fixture
@@ -174,11 +185,10 @@ class TestSplitSemantic:
 
 class TestChunkFixed:
     def test_short_text_single_chunk(self):
-        chunks = _chunk_fixed("짧은 텍스트", chunk_size=512, chunk_overlap=64)
+        chunks = _chunk_fixed("짧은 텍스트", chunk_size=512, chunk_overlap=128)
         assert len(chunks) == 1
 
     def test_long_text_multiple_chunks(self):
-        # 폴백: 2자 ≈ 1토큰, chunk_size=20 → char_size=40
         text = "가" * 200
         chunks = _chunk_fixed(text, chunk_size=20, chunk_overlap=4)
         assert len(chunks) > 1
@@ -188,6 +198,15 @@ class TestChunkFixed:
         chunks = _chunk_fixed(text, chunk_size=10, chunk_overlap=3)
         if len(chunks) >= 2:
             assert chunks[0][-4:] in chunks[1] or len(chunks[1]) > 0
+
+    def test_overlap_ge_chunk_size_no_infinite_loop(self):
+        """overlap >= chunk_size일 때 무한루프가 발생하지 않아야 한다."""
+        text = "가" * 200
+        chunks = _chunk_fixed(text, chunk_size=20, chunk_overlap=20)
+        assert len(chunks) > 1
+
+        chunks = _chunk_fixed(text, chunk_size=20, chunk_overlap=30)
+        assert len(chunks) > 1
 
 
 # ---------------------------------------------------------------------------
@@ -206,7 +225,7 @@ class TestHybridChunk:
     def test_large_segment_split(self):
         big = "가" * 2000
         text = f"짧은 문단\n\n{big}\n\n또 짧은 문단"
-        chunks = _hybrid_chunk(text, IndexType.CASE, chunk_size=50)
+        chunks = _hybrid_chunk(text, IndexType.CASE, chunk_size=50, chunk_overlap=10)
         assert len(chunks) > 1
 
     def test_small_segments_merged(self):
@@ -214,9 +233,32 @@ class TestHybridChunk:
         chunks = _hybrid_chunk(text, IndexType.CASE, chunk_size=512, min_chunk_tokens=10)
         assert len(chunks) <= 2
 
-    def test_empty_text_returns_original(self):
+    def test_empty_text_returns_empty_list(self):
+        """빈 텍스트는 빈 리스트를 반환해야 한다."""
         chunks = _hybrid_chunk("", IndexType.CASE)
-        assert chunks == [""]
+        assert chunks == []
+
+    def test_whitespace_only_returns_empty_list(self):
+        chunks = _hybrid_chunk("   \n\n   ", IndexType.CASE)
+        assert chunks == []
+
+
+# ---------------------------------------------------------------------------
+# 토크나이저 센티널 테스트
+# ---------------------------------------------------------------------------
+
+
+class TestTokenizerSentinel:
+    def test_load_failed_sentinel_prevents_retry(self):
+        """_LOAD_FAILED 센티널이 재시도를 방지하는지 확인."""
+        import src.inference.document_processor as dp
+
+        dp._tokenizer = dp._LOAD_FAILED
+        # _get_tokenizer가 mock되지 않은 실제 함수를 호출해도
+        # _LOAD_FAILED 센티널 덕분에 즉시 None 반환
+        with patch.object(dp, "_get_tokenizer", wraps=dp._get_tokenizer):
+            result = dp._get_tokenizer()
+            assert result is None
 
 
 # ---------------------------------------------------------------------------
@@ -242,10 +284,15 @@ class TestDocumentProcessor:
         assert meta.category == "facilities"
         assert meta.chunk_index == 0
         assert meta.chunk_total == len(results)
-        assert "content" in meta.extras
+        assert "chunk_text" in meta.extras
 
     def test_process_empty_file(self, processor: DocumentProcessor, tmp_empty_txt: Path):
         results = processor.process(str(tmp_empty_txt), IndexType.CASE)
+        assert results == []
+
+    def test_process_header_only_file(self, processor: DocumentProcessor, tmp_header_only_txt: Path):
+        """정제 후 빈 문서는 빈 리스트를 반환해야 한다."""
+        results = processor.process(str(tmp_header_only_txt), IndexType.CASE)
         assert results == []
 
     def test_unsupported_extension(self, processor: DocumentProcessor, tmp_path: Path):
@@ -263,14 +310,18 @@ class TestDocumentProcessor:
         results = processor.process(str(tmp_txt), IndexType.CASE, reliability_score=0.95)
         assert results[0].reliability_score == 0.95
 
-    def test_doc_id_format(self, processor: DocumentProcessor, tmp_txt: Path):
-        doc_id = processor.process(str(tmp_txt), IndexType.CASE)[0].doc_id
-        parts = doc_id.rsplit("-", 1)
-        assert len(parts) == 2
-        assert len(parts[0]) == 12
-        assert parts[1] == "0000"
+    def test_doc_id_stable_across_chunks(self, tmp_path: Path):
+        """같은 문서의 모든 청크가 동일한 doc_id를 가져야 한다."""
+        p = tmp_path / "long.txt"
+        p.write_text("가나다라마바사아자차카타파하 " * 100, encoding="utf-8")
+        proc = DocumentProcessor(chunk_size=20, chunk_overlap=4)
+        results = proc.process(str(p), IndexType.CASE)
+        assert len(results) > 1
+        doc_ids = {m.doc_id for m in results}
+        assert len(doc_ids) == 1, f"모든 청크의 doc_id가 동일해야 함: {doc_ids}"
 
     def test_chunk_index_sequential(self, tmp_path: Path):
+        """청크 인덱스가 순차적으로 할당되는지 확인."""
         p = tmp_path / "long.txt"
         p.write_text("가나다라마바사아자차카타파하 " * 100, encoding="utf-8")
         proc = DocumentProcessor(chunk_size=20, chunk_overlap=4)
@@ -283,11 +334,20 @@ class TestDocumentProcessor:
     def test_title_defaults_to_filename(self, processor: DocumentProcessor, tmp_txt: Path):
         assert processor.process(str(tmp_txt), IndexType.CASE)[0].title == "sample"
 
-    def test_extras_contains_file_info(self, processor: DocumentProcessor, tmp_txt: Path):
-        extras = processor.process(str(tmp_txt), IndexType.CASE, extras={"custom": "value"})[0].extras
+    def test_extras_uses_chunk_text_key(self, processor: DocumentProcessor, tmp_txt: Path):
+        """extras에 'chunk_text' 키를 사용해야 한다 (ORM content 컬럼과 구분)."""
+        results = processor.process(str(tmp_txt), IndexType.CASE, extras={"custom": "value"})
+        extras = results[0].extras
+        assert "chunk_text" in extras
+        assert "content" not in extras  # ORM 혼동 방지
         assert extras["file_extension"] == ".txt"
         assert extras["custom"] == "value"
         assert "file_path" in extras
+
+    def test_default_overlap_is_128(self):
+        """ADR-004 기준 기본 오버랩이 128인지 확인."""
+        proc = DocumentProcessor()
+        assert proc.chunk_overlap == 128
 
 
 # ---------------------------------------------------------------------------
@@ -311,7 +371,7 @@ class TestParsePdf:
 
 
 # ---------------------------------------------------------------------------
-# HWP 파싱 테스트 (python-hwp mock)
+# HWP 파싱 테스트 (mock)
 # ---------------------------------------------------------------------------
 
 
@@ -339,16 +399,28 @@ class TestProcessBatch:
         for i in range(3):
             (tmp_path / f"doc{i}.txt").write_text(f"문서 {i} 내용입니다.", encoding="utf-8")
         files = [str(tmp_path / f"doc{i}.txt") for i in range(3)]
-        results = processor.process_batch(files, IndexType.CASE, source="테스트")
-        assert len(results) == 3
+        result = processor.process_batch(files, IndexType.CASE, source="테스트")
+        assert isinstance(result, BatchResult)
+        assert result.total_chunks == 3
+        assert len(result.failed) == 0
 
-    def test_batch_skips_failed_files(self, processor: DocumentProcessor, tmp_path: Path):
+    def test_batch_tracks_failures(self, processor: DocumentProcessor, tmp_path: Path):
+        """실패 파일 정보가 BatchResult.failed에 기록되어야 한다."""
         good = tmp_path / "good.txt"
         good.write_text("정상 문서", encoding="utf-8")
         bad = tmp_path / "bad.docx"
         bad.touch()
-        results = processor.process_batch([str(good), str(bad)], IndexType.CASE)
-        assert len(results) >= 1
+
+        result = processor.process_batch([str(good), str(bad)], IndexType.CASE)
+        assert result.total_chunks >= 1
+        assert len(result.failed) == 1
+        assert "bad.docx" in result.failed[0][0]
+        assert "지원하지 않는 파일 형식" in result.failed[0][1]
+
+    def test_batch_result_properties(self):
+        br = BatchResult()
+        assert br.total_chunks == 0
+        assert len(br.failed) == 0
 
 
 # ---------------------------------------------------------------------------
