@@ -34,6 +34,7 @@ concurrency:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  ESTIMATED_COLD_INSTALL_SECONDS: 60
 
 jobs:
   # ──────────────────────────────────────────────
@@ -44,18 +45,29 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-          cache-dependency-glob: "uv.lock"
+      - name: Record setup start time
+        id: setup-start
+        run: echo "time=$(date +%s%N)" >> "$GITHUB_OUTPUT"
 
-      - name: Set up Python
-        run: uv python install 3.10
+      - name: Setup Python with uv
+        uses: ./.github/actions/setup-python-uv
 
-      - name: Install dependencies
+      - name: Record setup end time
+        id: setup-end
+        run: echo "time=$(date +%s%N)" >> "$GITHUB_OUTPUT"
+
+      - name: Check cache status
+        id: cache-status
         run: |
-          uv sync --all-extras
+          if [ -d "$HOME/.cache/uv" ] && [ "$(ls -A $HOME/.cache/uv 2>/dev/null)" ]; then
+            echo "status=hit" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=miss" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Record task start time
+        id: task-start
+        run: echo "time=$(date +%s%N)" >> "$GITHUB_OUTPUT"
 
       - name: Black (format check)
         continue-on-error: true
@@ -69,69 +81,64 @@ jobs:
         continue-on-error: true
         run: uv run flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=.venv,.git,__pycache__,build,dist
 
+      - name: Record task end time
+        id: task-end
+        run: echo "time=$(date +%s%N)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Performance Report
+        if: always()
+        run: |
+          setup_start=${{ steps.setup-start.outputs.time }}
+          setup_end=${{ steps.setup-end.outputs.time }}
+          task_start=${{ steps.task-start.outputs.time }}
+          task_end=${{ steps.task-end.outputs.time }}
+          cache_status="${{ steps.cache-status.outputs.status }}"
+          cold_baseline=${{ env.ESTIMATED_COLD_INSTALL_SECONDS }}
+
+          setup_ns=$((setup_end - setup_start))
+          task_ns=$((task_end - task_start))
+          total_ns=$((setup_ns + task_ns))
+
+          setup_sec=$(echo "scale=2; $setup_ns / 1000000000" | bc)
+          task_sec=$(echo "scale=2; $task_ns / 1000000000" | bc)
+          total_sec=$(echo "scale=2; $total_ns / 1000000000" | bc)
+
+          if [ "$cache_status" = "hit" ]; then
+            cache_display="✅ HIT"
+            improvement=$(echo "scale=2; ($cold_baseline - $setup_sec) / $cold_baseline * 100" | bc)
+            savings=$(echo "scale=2; $cold_baseline - $setup_sec" | bc)
+            savings_line="| Estimated Savings | ~${savings}s (estimated cold install: ~${cold_baseline}s) |"
+            improvement_line="| Improvement Rate | ~${improvement}% |"
+          else
+            cache_display="❌ MISS"
+            savings_line="| Estimated Savings | N/A (cache miss, this run establishes the cache) |"
+            improvement_line="| Improvement Rate | N/A (cache miss, this run establishes the cache) |"
+          fi
+
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          ### ⏱️ Cache Performance Report — Lint
+          | Metric | Value |
+          |--------|-------|
+          | Cache Status | ${cache_display} |
+          | Setup Duration | ${setup_sec}s |
+          | Task Duration | ${task_sec}s |
+          | Total Duration | ${total_sec}s |
+          ${savings_line}
+          ${improvement_line}
+          EOF
+
   # ──────────────────────────────────────────────
-  # 2. Test — 매트릭스 전략으로 다중 환경 테스트
+  # 2. Test — 재사용 가능한 워크플로우로 다중 환경 테스트
   # ──────────────────────────────────────────────
   test:
     needs: [lint]
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.10", "3.11"]
-        os: ["ubuntu-latest", "ubuntu-22.04"]
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-          cache-dependency-glob: "uv.lock"
-
-      - name: Set up Python ${{ matrix.python-version }}
-        run: uv python install ${{ matrix.python-version }}
-
-      - name: Install dependencies
-        run: |
-          uv sync --all-extras
-
-      - name: Run Unit Tests (Shift-Left)
-        run: |
-          export SKIP_MODEL_LOAD=true
-          uv run pytest \
-            tests/test_inference/test_api_logic.py \
-            tests/test_inference/test_shift_left.py \
-            tests/test_inference/test_feature_flags.py \
-            tests/test_inference/test_schemas.py \
-            tests/test_inference/test_agent_manager.py \
-            tests/test_inference/test_db_converters.py \
-            tests/test_inference/test_db_crud.py \
-            tests/test_inference/test_db_models.py \
-            -o "addopts=" \
-            --cov=src/inference \
-            --cov-branch \
-            --cov-fail-under=30 \
-            --cov-report=xml \
-            --cov-report=term-missing
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          file: ./coverage.xml
-          fail_ci_if_error: false
-
-      - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-${{ matrix.os }}-py${{ matrix.python-version }}
-          path: ./coverage.xml
-          retention-days: 7
-
-      - name: Test Summary
-        if: always()
-        run: echo "### Test Results (${{ matrix.os }}, Python ${{ matrix.python-version }})" >> $GITHUB_STEP_SUMMARY
+    uses: ./.github/workflows/reusable-test.yml
+    with:
+      python-versions: '["3.10", "3.11"]'
+      os-list: '["ubuntu-latest", "ubuntu-22.04"]'
+      coverage-threshold: 30
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   # ──────────────────────────────────────────────
   # 3. Build — 패키지 빌드 및 아티팩트 업로드
@@ -142,21 +149,36 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-          cache-dependency-glob: "uv.lock"
+      - name: Record setup start time
+        id: setup-start
+        run: echo "time=$(date +%s%N)" >> "$GITHUB_OUTPUT"
 
-      - name: Set up Python
-        run: uv python install 3.10
+      - name: Setup Python with uv
+        uses: ./.github/actions/setup-python-uv
 
-      - name: Install dependencies
+      - name: Record setup end time
+        id: setup-end
+        run: echo "time=$(date +%s%N)" >> "$GITHUB_OUTPUT"
+
+      - name: Check cache status
+        id: cache-status
         run: |
-          uv sync --all-extras
+          if [ -d "$HOME/.cache/uv" ] && [ "$(ls -A $HOME/.cache/uv 2>/dev/null)" ]; then
+            echo "status=hit" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=miss" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Record task start time
+        id: task-start
+        run: echo "time=$(date +%s%N)" >> "$GITHUB_OUTPUT"
 
       - name: Build package
         run: uv build
+
+      - name: Record task end time
+        id: task-end
+        run: echo "time=$(date +%s%N)" >> "$GITHUB_OUTPUT"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -169,6 +191,48 @@ jobs:
         run: |
           echo "### Build Artifacts" >> $GITHUB_STEP_SUMMARY
           ls -lh dist/ >> $GITHUB_STEP_SUMMARY
+
+      - name: Cache Performance Report
+        if: always()
+        run: |
+          setup_start=${{ steps.setup-start.outputs.time }}
+          setup_end=${{ steps.setup-end.outputs.time }}
+          task_start=${{ steps.task-start.outputs.time }}
+          task_end=${{ steps.task-end.outputs.time }}
+          cache_status="${{ steps.cache-status.outputs.status }}"
+          cold_baseline=${{ env.ESTIMATED_COLD_INSTALL_SECONDS }}
+
+          setup_ns=$((setup_end - setup_start))
+          task_ns=$((task_end - task_start))
+          total_ns=$((setup_ns + task_ns))
+
+          setup_sec=$(echo "scale=2; $setup_ns / 1000000000" | bc)
+          task_sec=$(echo "scale=2; $task_ns / 1000000000" | bc)
+          total_sec=$(echo "scale=2; $total_ns / 1000000000" | bc)
+
+          if [ "$cache_status" = "hit" ]; then
+            cache_display="✅ HIT"
+            improvement=$(echo "scale=2; ($cold_baseline - $setup_sec) / $cold_baseline * 100" | bc)
+            savings=$(echo "scale=2; $cold_baseline - $setup_sec" | bc)
+            savings_line="| Estimated Savings | ~${savings}s (estimated cold install: ~${cold_baseline}s) |"
+            improvement_line="| Improvement Rate | ~${improvement}% |"
+          else
+            cache_display="❌ MISS"
+            savings_line="| Estimated Savings | N/A (cache miss, this run establishes the cache) |"
+            improvement_line="| Improvement Rate | N/A (cache miss, this run establishes the cache) |"
+          fi
+
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          ### ⏱️ Cache Performance Report — Build
+          | Metric | Value |
+          |--------|-------|
+          | Cache Status | ${cache_display} |
+          | Setup Duration | ${setup_sec}s |
+          | Task Duration | ${task_sec}s |
+          | Total Duration | ${total_sec}s |
+          ${savings_line}
+          ${improvement_line}
+          EOF
 
   # ──────────────────────────────────────────────
   # 4. Deploy — 배포 (main 브랜치에서만 실제 배포)
