@@ -32,7 +32,7 @@ jobs:
           destination: ./_site
 
       - name: Upload preview artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pr-preview-${{ github.event.pull_request.number }}
           path: ./_site
