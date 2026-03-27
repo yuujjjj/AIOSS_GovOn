@@ -114,11 +114,11 @@ jobs:
         uses: actions/github-script@v8
         with:
           script: |
-            const fs = require('fs');
             const vulnCount = '${{ steps.audit.outputs.vuln_count }}';
             const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const today = new Date().toISOString().split('T')[0];
 
-            // Check for existing open issue
+            // Check for existing open issue with security,automated labels
             const existingIssues = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -126,7 +126,21 @@ jobs:
               state: 'open',
             });
 
-            const title = `🔒 보안 취약점 감지: ${vulnCount}건 (${new Date().toISOString().split('T')[0]})`;
+            // If an open issue already exists, add a comment instead of creating a new one
+            if (existingIssues.data.length > 0) {
+              const existing = existingIssues.data[0];
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body: `## 보안 스캔 업데이트 (${today})\n\n| 항목 | 값 |\n|------|----|\n| 감지된 취약점 | ${vulnCount}건 |\n| 스캔 일시 | ${new Date().toISOString()} |\n| Actions Run | [링크](${runUrl}) |`,
+              });
+              core.info(`Updated existing issue #${existing.number} with comment`);
+              return;
+            }
+
+            // No open issue exists — create a new one
+            const title = `🔒 보안 취약점 감지: ${vulnCount}건 (${today})`;
 
             let body = `## 자동 보안 스캔 결과\n\n`;
             body += `| 항목 | 값 |\n|------|----|\n`;
@@ -137,17 +151,6 @@ jobs:
             body += `1. Actions Run 링크에서 상세 결과 확인\n`;
             body += `2. \`audit-results.json\` 아티팩트 다운로드하여 취약점 목록 검토\n`;
             body += `3. 취약한 패키지 업데이트 후 이 이슈 종료\n`;
-
-            // Close existing issues before creating new one
-            for (const issue of existingIssues.data) {
-              await github.rest.issues.update({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issue.number,
-                state: 'closed',
-                state_reason: 'completed',
-              });
-            }
 
             await github.rest.issues.create({
               owner: context.repo.owner,

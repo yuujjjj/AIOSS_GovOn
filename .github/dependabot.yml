@@ -5,7 +5,8 @@ updates:
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
-      interval: "daily"
+      interval: "weekly"
+      day: "monday"
       timezone: "Asia/Seoul"
     labels:
       - "dependencies"
@@ -30,7 +31,8 @@ updates:
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
-      interval: "daily"
+      interval: "weekly"
+      day: "monday"
       timezone: "Asia/Seoul"
     labels:
       - "dependencies"
@@ -43,7 +45,8 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "daily"
+      interval: "weekly"
+      day: "monday"
       timezone: "Asia/Seoul"
     labels:
       - "dependencies"
