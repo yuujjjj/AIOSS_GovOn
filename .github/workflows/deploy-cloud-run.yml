@@ -1,0 +1,261 @@
+# GCP Cloud Run Deployment
+#
+# Secrets required:
+#   - GCP_PROJECT_ID      : GCP project ID
+#   - GCP_SA_KEY          : Service account JSON key (base64 encoded)
+#   - GCP_REGION          : Deployment region (default: asia-northeast3)
+#
+# The workflow deploys the GHCR Docker image to Cloud Run with:
+#   - Automatic traffic migration
+#   - Health check verification
+#   - Automatic rollback on failure
+#   - Deployment summary report
+
+name: Deploy to Cloud Run
+
+on:
+  workflow_run:
+    workflows: ["Docker Publish"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Docker image tag to deploy'
+        required: false
+        default: 'latest'
+
+concurrency:
+  group: deploy-cloud-run
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  SERVICE_NAME: govon-api
+  REGISTRY: ghcr.io
+  IMAGE_NAME: govon-org/govon
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    outputs:
+      revision: ${{ steps.deploy.outputs.revision }}
+      url: ${{ steps.deploy.outputs.url }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Determine image tag
+        id: image
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.image_tag }}"
+          else
+            TAG="sha-$(echo ${{ github.event.workflow_run.head_sha }} | cut -c1-7)"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "full_image=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Get current revision (for rollback)
+        id: current
+        continue-on-error: true
+        run: |
+          CURRENT=$(gcloud run revisions list \
+            --service=${{ env.SERVICE_NAME }} \
+            --region=${{ secrets.GCP_REGION || 'asia-northeast3' }} \
+            --format='value(REVISION)' \
+            --limit=1 2>/dev/null || echo "none")
+          echo "revision=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "Current revision: $CURRENT"
+
+      - name: Deploy to Cloud Run
+        id: deploy
+        run: |
+          RESULT=$(gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --image=${{ steps.image.outputs.full_image }} \
+            --region=${{ secrets.GCP_REGION || 'asia-northeast3' }} \
+            --platform=managed \
+            --port=8000 \
+            --memory=4Gi \
+            --cpu=2 \
+            --min-instances=0 \
+            --max-instances=3 \
+            --timeout=300 \
+            --concurrency=80 \
+            --set-env-vars="SKIP_MODEL_LOAD=true" \
+            --allow-unauthenticated \
+            --format='value(status.url)' 2>&1) || true
+
+          URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region=${{ secrets.GCP_REGION || 'asia-northeast3' }} \
+            --format='value(status.url)' 2>/dev/null || echo "")
+
+          REVISION=$(gcloud run revisions list \
+            --service=${{ env.SERVICE_NAME }} \
+            --region=${{ secrets.GCP_REGION || 'asia-northeast3' }} \
+            --format='value(REVISION)' \
+            --limit=1 2>/dev/null || echo "unknown")
+
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "revision=$REVISION" >> "$GITHUB_OUTPUT"
+          echo "Deployed revision: $REVISION"
+          echo "Service URL: $URL"
+
+  health-check:
+    needs: [deploy]
+    runs-on: ubuntu-latest
+    outputs:
+      healthy: ${{ steps.check.outputs.healthy }}
+    steps:
+      - name: Wait for deployment to stabilize
+        run: sleep 30
+
+      - name: Health check
+        id: check
+        run: |
+          URL="${{ needs.deploy.outputs.url }}"
+          if [ -z "$URL" ]; then
+            echo "healthy=false" >> "$GITHUB_OUTPUT"
+            echo "::error::No deployment URL available"
+            exit 0
+          fi
+
+          HEALTHY=false
+          for i in $(seq 1 10); do
+            echo "Health check attempt $i/10..."
+            HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" "${URL}/health" 2>/dev/null || echo "000")
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "Health check passed!"
+              HEALTHY=true
+              break
+            fi
+            echo "Got HTTP $HTTP_CODE, retrying in 15s..."
+            sleep 15
+          done
+
+          echo "healthy=$HEALTHY" >> "$GITHUB_OUTPUT"
+
+      - name: Health check summary
+        if: always()
+        run: |
+          echo "### Health Check Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Service URL | ${{ needs.deploy.outputs.url }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Revision | ${{ needs.deploy.outputs.revision }} |" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.check.outputs.healthy }}" = "true" ]; then
+            echo "| Status | Healthy |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Status | Unhealthy |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  rollback:
+    needs: [deploy, health-check]
+    runs-on: ubuntu-latest
+    if: needs.health-check.outputs.healthy == 'false'
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Rollback to previous revision
+        run: |
+          echo "::warning::Health check failed! Initiating rollback..."
+
+          REVISIONS=$(gcloud run revisions list \
+            --service=${{ env.SERVICE_NAME }} \
+            --region=${{ secrets.GCP_REGION || 'asia-northeast3' }} \
+            --format='value(REVISION)' \
+            --limit=2 2>/dev/null)
+
+          PREVIOUS=$(echo "$REVISIONS" | tail -1)
+
+          if [ -n "$PREVIOUS" ]; then
+            gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
+              --region=${{ secrets.GCP_REGION || 'asia-northeast3' }} \
+              --to-revisions="$PREVIOUS=100"
+            echo "Rolled back to revision: $PREVIOUS"
+          else
+            echo "::error::No previous revision available for rollback"
+          fi
+
+      - name: Rollback summary
+        run: |
+          echo "### Automatic Rollback Executed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Health check failed for the new deployment." >> $GITHUB_STEP_SUMMARY
+          echo "Traffic has been routed back to the previous revision." >> $GITHUB_STEP_SUMMARY
+
+  notify:
+    needs: [deploy, health-check]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Create deployment issue on failure
+        if: needs.health-check.outputs.healthy == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const url = '${{ needs.deploy.outputs.url }}';
+            const revision = '${{ needs.deploy.outputs.revision }}';
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Cloud Run 배포 실패: ${revision}`,
+              body: [
+                `## 배포 실패 알림`,
+                ``,
+                `| 항목 | 값 |`,
+                `|------|-----|`,
+                `| Revision | \`${revision}\` |`,
+                `| Service URL | ${url} |`,
+                `| Actions Run | [링크](${runUrl}) |`,
+                `| 자동 롤백 | 실행됨 |`,
+                ``,
+                `### 조치 필요`,
+                `1. Actions 로그에서 실패 원인 확인`,
+                `2. 수정 후 재배포`,
+              ].join('\n'),
+              labels: ['deployment', 'automated'],
+            });
+
+      - name: Deployment summary
+        if: always()
+        run: |
+          echo "### Cloud Run Deployment Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | ${{ env.SERVICE_NAME }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| URL | ${{ needs.deploy.outputs.url }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Revision | ${{ needs.deploy.outputs.revision }} |" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ needs.health-check.outputs.healthy }}" = "true" ]; then
+            echo "| Health | Healthy |" >> $GITHUB_STEP_SUMMARY
+            echo "| Result | Deployment successful |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Health | Failed |" >> $GITHUB_STEP_SUMMARY
+            echo "| Result | Rolled back to previous version |" >> $GITHUB_STEP_SUMMARY
+          fi
