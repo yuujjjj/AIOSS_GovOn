@@ -150,7 +150,7 @@ GovOn/
 | 팀원 | 장시우 | 2143655 | AI학과 | [@siuJang](https://github.com/siuJang) |
 | 팀원 | 이유정 | 2243951 | AI학과 | [@yuujjjj](https://github.com/yuujjjj) |
 
-**멘토**: 천세진 교수 (동아대학교)
+**멘토**: 전동산 교수 (동아대학교)
 
 ## 문서
 
