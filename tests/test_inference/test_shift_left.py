@@ -1152,7 +1152,7 @@ class TestStreamShiftLeft:
     def client_with_stream(self, client_with_index):
         """vLLM generate_stream을 mock하여 스트리밍 응답을 시뮬레이션한다."""
         output_mock = _make_vllm_output_mock(text="스트리밍 테스트 응답입니다.")
-        output_mock.is_finished = True
+        output_mock.finished = True
 
         async def _stream():
             yield output_mock

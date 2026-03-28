@@ -30,8 +30,21 @@ _faiss_is_real = _faiss_module is not None and not isinstance(_faiss_module, Mag
 if not _faiss_is_real:
     _faiss_mock = MagicMock()
     # index_manager._maybe_upgrade_to_ivf()에서 isinstance 호출이 동작하도록 타입 설정
-    _faiss_mock.IndexIVFFlat = type("IndexIVFFlat", (), {})
-    _faiss_mock.IndexFlatIP = type("IndexFlatIP", (), {})
+    class MockIndex:
+        def __init__(self, *args, **kwargs):
+            self.ntotal = 0
+        def add(self, x):
+            self.ntotal += len(x)
+        def search(self, x, k):
+            import numpy as np
+            return np.zeros((len(x), k), dtype=np.float32), np.zeros((len(x), k), dtype=np.int64)
+        def train(self, x):
+            pass
+        def reset(self):
+            self.ntotal = 0
+
+    _faiss_mock.IndexIVFFlat = type("IndexIVFFlat", (MockIndex,), {})
+    _faiss_mock.IndexFlatIP = type("IndexFlatIP", (MockIndex,), {})
     sys.modules["faiss"] = _faiss_mock
 
 import pytest

@@ -45,10 +45,16 @@ from .schemas import (
 from .feature_flags import FeatureFlags
 
 if not SKIP_MODEL_LOAD:
-    from vllm.engine.arg_utils import AsyncEngineArgs
-    from vllm.engine.async_llm_engine import AsyncLLMEngine
-    from vllm.sampling_params import SamplingParams
-    from .vllm_stabilizer import apply_transformers_patch
+    try:
+        from vllm.engine.arg_utils import AsyncEngineArgs
+        from vllm.engine.async_llm_engine import AsyncLLMEngine
+        from vllm.sampling_params import SamplingParams
+        from .vllm_stabilizer import apply_transformers_patch
+    except ImportError:
+        logger.warning("vllm modules not found. Model loading will fail if attempted.")
+        AsyncEngineArgs = object
+        AsyncLLMEngine = object
+        apply_transformers_patch = lambda: None
 
 # --- Rate Limiting (optional) ---
 try:
@@ -114,14 +120,27 @@ class vLLMEngineManager:
 
         # 1. Initialize Optimized vLLM Engine
         logger.info(f"Initializing vLLM M3 engine with model: {MODEL_PATH}")
-        self.engine = AsyncLLM(
-            model=MODEL_PATH,
-            trust_remote_code=TRUST_REMOTE_CODE,
-            gpu_memory_utilization=GPU_UTILIZATION,
-            max_model_len=MAX_MODEL_LEN,
-            dtype="half",
-            enforce_eager=True,  # More stable for patched EXAONE
-        )
+        
+        # vllm.v1.engine.async_llm.AsyncLLM 또는 vllm.engine.async_llm_engine.AsyncLLMEngine 모두
+        # from_engine_args를 지원하므로 이를 통해 초기화한다.
+        try:
+            engine_args = AsyncEngineArgs(
+                model=MODEL_PATH,
+                trust_remote_code=TRUST_REMOTE_CODE,
+                gpu_memory_utilization=GPU_UTILIZATION,
+                max_model_len=MAX_MODEL_LEN,
+                dtype="half",
+                enforce_eager=True,
+            )
+            
+            if hasattr(AsyncLLM, "from_engine_args"):
+                self.engine = AsyncLLM.from_engine_args(engine_args)
+            else:
+                # Fallback for direct instantiation if from_engine_args is missing
+                self.engine = AsyncLLM(engine_args)
+        except Exception as e:
+            logger.error(f"vLLM 엔진 초기화 실패: {e}")
+            raise e
 
         # 2. Initialize RAG Retriever
         logger.info(f"Initializing RAG Retriever with index: {INDEX_PATH}")
@@ -295,6 +314,18 @@ class vLLMEngineManager:
 
         return augmented_prompt, sampling_params, retrieved_cases
 
+    async def _run_engine(self, prompt: str, sampling_params: SamplingParams, request_id: str):
+        """vLLM 엔진의 generate를 실행하고 최종 결과를 반환한다. (제너레이터 처리 포함)"""
+        result = self.engine.generate(prompt, sampling_params, request_id)
+        
+        if hasattr(result, "__aiter__"):
+            final_output = None
+            async for output in result:
+                final_output = output
+            return final_output
+        else:
+            return await result
+
     async def generate(
         self, request: GenerateRequest, request_id: str, flags: "FeatureFlags | None" = None
     ) -> tuple:
@@ -302,7 +333,7 @@ class vLLMEngineManager:
         augmented_prompt, sampling_params, retrieved_cases = self._prepare_generation(
             request, request_id, flags
         )
-        output = await self.engine.generate(augmented_prompt, sampling_params, request_id)
+        output = await self._run_engine(augmented_prompt, sampling_params, request_id)
         return output, retrieved_cases
 
     async def generate_stream(
@@ -312,7 +343,12 @@ class vLLMEngineManager:
         augmented_prompt, sampling_params, retrieved_cases = self._prepare_generation(
             request, request_id, flags
         )
-        stream = self.engine.stream(augmented_prompt, sampling_params, request_id)
+        # vLLM V1에서는 generate() 자체가 스트림을 반환하므로 stream() 메서드 대신 generate()를 우선적으로 고려한다.
+        if hasattr(self.engine, "stream"):
+            stream = self.engine.stream(augmented_prompt, sampling_params, request_id)
+        else:
+            stream = self.engine.generate(augmented_prompt, sampling_params, request_id)
+            
         return stream, retrieved_cases
 
 
@@ -427,7 +463,7 @@ async def classify(
         max_tokens=classifier.max_tokens,
     )
 
-    final_output = await manager.engine.generate(classify_prompt, sampling_params, request_id)
+    final_output = await manager._run_engine(classify_prompt, sampling_params, request_id)
 
     if final_output is None:
         raise HTTPException(status_code=500, detail="분류 처리에 실패했습니다.")
@@ -501,7 +537,7 @@ async def stream_generate(
 
         async for request_output in results_stream:
             text = request_output.outputs[0].text
-            finished = request_output.is_finished
+            finished = request_output.finished
             if finished:
                 text = manager._strip_thought_blocks(text)
 
