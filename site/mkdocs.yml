@@ -39,6 +39,9 @@ plugins:
 markdown_extensions:
   - admonition
   - codehilite
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
   - pymdownx.superfences:
       custom_fences:
         - name: mermaid
@@ -58,6 +61,7 @@ markdown_extensions:
 
 nav:
   - 홈: index.md
+  - 발표자료: presentation.md
   - 아키텍처:
       - 시스템 구성도: architecture/overview.md
       - ADR: architecture/adr/index.md
