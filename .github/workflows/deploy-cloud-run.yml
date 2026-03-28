@@ -5,7 +5,7 @@
 #   - GCP_SA_KEY          : Service account JSON key (base64 encoded)
 #   - GCP_REGION          : Deployment region (default: asia-northeast3)
 #
-# The workflow deploys the GHCR Docker image to Cloud Run with:
+# The workflow deploys the Docker image to Cloud Run via Artifact Registry with:
 #   - Automatic traffic migration
 #   - Health check verification
 #   - Automatic rollback on failure
@@ -32,13 +32,15 @@ concurrency:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   SERVICE_NAME: govon-api
-  REGISTRY: ghcr.io
-  IMAGE_NAME: govon-org/govon
+  GCP_REGION: asia-northeast3
+  AR_REPOSITORY: govon-repo
+  GHCR_IMAGE: ghcr.io/govon-org/govon
 
 permissions:
   contents: read
   id-token: write
   issues: write
+  packages: read
 
 jobs:
   deploy:
@@ -61,7 +63,7 @@ jobs:
         env:
           GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
 
-      - name: Determine image tag
+      - name: Determine image tags
         id: image
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -69,8 +71,12 @@ jobs:
           else
             TAG="sha-$(echo ${{ github.event.workflow_run.head_sha }} | cut -c1-7)"
           fi
+          
+          GCP_IMAGE="${{ env.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.AR_REPOSITORY }}/govon-api:${TAG}"
+          
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "full_image=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${TAG}" >> "$GITHUB_OUTPUT"
+          echo "ghcr_image=${{ env.GHCR_IMAGE }}:${TAG}" >> "$GITHUB_OUTPUT"
+          echo "gcp_image=$GCP_IMAGE" >> "$GITHUB_OUTPUT"
 
       - name: Authenticate to Google Cloud
         id: auth
@@ -87,10 +93,27 @@ jobs:
         run: |
           echo "Enabling required APIs..."
           gcloud services enable run.googleapis.com \
+            artifactregistry.googleapis.com \
             iam.googleapis.com \
             compute.googleapis.com \
             cloudresourcemanager.googleapis.com \
+            serviceusage.googleapis.com \
             --quiet
+
+      - name: Configure Docker for GCP
+        run: |
+          gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev --quiet
+
+      - name: Push image to Artifact Registry
+        run: |
+          echo "Copying image from GHCR to Artifact Registry..."
+          # Login to GHCR to pull the image
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          
+          # Pull from GHCR, Tag for GCP, and Push to AR
+          docker pull ${{ steps.image.outputs.ghcr_image }}
+          docker tag ${{ steps.image.outputs.ghcr_image }} ${{ steps.image.outputs.gcp_image }}
+          docker push ${{ steps.image.outputs.gcp_image }}
 
       - name: Get current revision (for rollback)
         id: current
@@ -98,7 +121,7 @@ jobs:
         run: |
           CURRENT=$(gcloud run revisions list \
             --service=${{ env.SERVICE_NAME }} \
-            --region=${{ secrets.GCP_REGION || 'asia-northeast3' }} \
+            --region=${{ env.GCP_REGION }} \
             --format='value(REVISION)' \
             --limit=1 2>/dev/null || echo "none")
           echo "revision=$CURRENT" >> "$GITHUB_OUTPUT"
@@ -107,12 +130,11 @@ jobs:
       - name: Deploy to Cloud Run
         id: deploy
         run: |
-          echo "Deploying image: ${{ steps.image.outputs.full_image }}"
+          echo "Deploying from Artifact Registry: ${{ steps.image.outputs.gcp_image }}"
           
-          # Deploy command without || true to catch actual errors
           if ! gcloud run deploy ${{ env.SERVICE_NAME }} \
-            --image=${{ steps.image.outputs.full_image }} \
-            --region=${{ secrets.GCP_REGION || 'asia-northeast3' }} \
+            --image=${{ steps.image.outputs.gcp_image }} \
+            --region=${{ env.GCP_REGION }} \
             --platform=managed \
             --port=8000 \
             --memory=4Gi \
@@ -129,9 +151,8 @@ jobs:
             exit 1
           fi
 
-          # Get Service URL reliably
           URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
-            --region=${{ secrets.GCP_REGION || 'asia-northeast3' }} \
+            --region=${{ env.GCP_REGION }} \
             --format='value(status.url)' 2>/dev/null)
           
           if [ -z "$URL" ]; then
@@ -139,10 +160,9 @@ jobs:
             exit 1
           fi
 
-          # Get Revision reliably
           REVISION=$(gcloud run revisions list \
             --service=${{ env.SERVICE_NAME }} \
-            --region=${{ secrets.GCP_REGION || 'asia-northeast3' }} \
+            --region=${{ env.GCP_REGION }} \
             --format='value(REVISION)' \
             --limit=1 2>/dev/null || echo "unknown")
 
@@ -219,7 +239,7 @@ jobs:
 
           REVISION_COUNT=$(gcloud run revisions list \
             --service=${{ env.SERVICE_NAME }} \
-            --region=${{ secrets.GCP_REGION || 'asia-northeast3' }} \
+            --region=asia-northeast3 \
             --format='value(REVISION)' 2>/dev/null | wc -l | tr -d ' ')
 
           if [ "$REVISION_COUNT" -lt 2 ]; then
@@ -229,13 +249,13 @@ jobs:
 
           PREVIOUS=$(gcloud run revisions list \
             --service=${{ env.SERVICE_NAME }} \
-            --region=${{ secrets.GCP_REGION || 'asia-northeast3' }} \
+            --region=asia-northeast3 \
             --format='value(REVISION)' \
             --limit=2 2>/dev/null | tail -1)
 
           if [ -n "$PREVIOUS" ]; then
             gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
-              --region=${{ secrets.GCP_REGION || 'asia-northeast3' }} \
+              --region=asia-northeast3 \
               --to-revisions="$PREVIOUS=100"
             echo "Rolled back to revision: $PREVIOUS"
           else
