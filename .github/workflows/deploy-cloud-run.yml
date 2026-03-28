@@ -50,6 +50,16 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Check GCP credentials
+        id: check-creds
+        run: |
+          if [ -z "$GCP_SA_KEY" ]; then
+            echo "::error::GCP_SA_KEY 시크릿이 설정되지 않았습니다. 배포를 중단합니다."
+            exit 1
+          fi
+        env:
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+
       - name: Determine image tag
         id: image
         run: |
