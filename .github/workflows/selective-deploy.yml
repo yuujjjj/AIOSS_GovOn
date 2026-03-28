@@ -121,10 +121,21 @@ jobs:
             tests/test_inference/test_db_converters.py \
             tests/test_inference/test_db_crud.py \
             tests/test_inference/test_db_models.py \
+            tests/test_inference/test_retriever.py \
+            tests/test_inference/test_vllm_stabilizer.py \
+            tests/test_inference/test_api_server_units.py \
+            tests/test_inference/test_hybrid_search_units.py \
+            tests/test_inference/test_bm25_units.py \
+            tests/test_inference/test_index_manager_units.py \
+            tests/test_inference/test_prompt_validator.py \
+            tests/test_inference/test_search_cache.py \
+            tests/test_inference/test_response_formatter.py \
+            tests/test_inference/test_rate_tracker.py \
+            tests/test_inference/test_health_checker.py \
             -o "addopts=" \
             --cov=src/inference \
             --cov-branch \
-            --cov-fail-under=30 \
+            --cov-fail-under=80 \
             --cov-report=xml \
             --cov-report=term-missing
 

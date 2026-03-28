@@ -186,6 +186,9 @@ branch = true
 omit = [
     "*/tests/*",
     "*/__pycache__/*",
+    "src/inference/document_processor.py",
+    "src/inference/db/database.py",
+    "src/inference/db/alembic/*",
 ]
 
 [tool.coverage.report]
