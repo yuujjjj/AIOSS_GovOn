@@ -136,7 +136,7 @@ jobs:
     with:
       python-versions: '["3.10", "3.11"]'
       os-list: '["ubuntu-latest", "ubuntu-22.04"]'
-      coverage-threshold: 30
+      coverage-threshold: 80
     secrets:
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
