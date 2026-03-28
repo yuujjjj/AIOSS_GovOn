@@ -35,7 +35,7 @@ COPY requirements.txt .
 
 # Install dependencies
 RUN python3.10 -m pip install --no-cache-dir -r requirements.txt
-RUN python3.10 -m pip install --no-cache-dir .
+RUN python3.10 -m pip install --no-cache-dir ".[all]"
 
 # Copy source code
 COPY src/ ./src/
