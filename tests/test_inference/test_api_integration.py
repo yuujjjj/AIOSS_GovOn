@@ -28,6 +28,8 @@ import pytest
 
 # vllm 관련 모듈
 _vllm_mock = MagicMock()
+_vllm_mock.AsyncLLM = MagicMock()
+_vllm_mock.SamplingParams = MagicMock()
 sys.modules.setdefault("vllm", _vllm_mock)
 sys.modules.setdefault("vllm.engine", _vllm_mock)
 sys.modules.setdefault("vllm.engine.arg_utils", _vllm_mock)
@@ -71,18 +73,14 @@ _has_search_endpoint = any(
 
 
 def _make_vllm_output_mock(text="테스트 응답입니다."):
-    """vLLM 엔진의 generate 결과를 시뮬레이션하는 async generator를 반환한다."""
+    """vLLM 엔진의 generate 결과를 시뮬레이션하는 mock output 객체를 반환한다."""
     output_mock = MagicMock()
     output_mock.outputs = [MagicMock()]
     output_mock.outputs[0].text = text
     output_mock.outputs[0].token_ids = list(range(10))
     output_mock.prompt_token_ids = list(range(5))
     output_mock.finished = True
-
-    async def _gen(*args, **kwargs):
-        yield output_mock
-
-    return _gen
+    return output_mock
 
 
 # ---------------------------------------------------------------------------
@@ -515,7 +513,7 @@ class TestGenerateEndpoint:
             ]
         )
         manager.engine = MagicMock()
-        manager.engine.generate = MagicMock(return_value=_make_vllm_output_mock()())
+        manager.engine.generate = AsyncMock(return_value=_make_vllm_output_mock())
 
         payload = {
             "prompt": "도로 보수 관련 민원에 대해 답변해주세요.",
@@ -545,7 +543,7 @@ class TestGenerateEndpoint:
         manager.retriever = MagicMock()
         manager.retriever.search = MagicMock(return_value=[])
         manager.engine = MagicMock()
-        manager.engine.generate = MagicMock(return_value=_make_vllm_output_mock()())
+        manager.engine.generate = AsyncMock(return_value=_make_vllm_output_mock())
 
         payload = {
             "prompt": "도로 보수 관련 민원",
@@ -564,7 +562,7 @@ class TestGenerateEndpoint:
         """use_rag=false 시 retrieved_cases가 빈 리스트이다."""
         manager.retriever = MagicMock()
         manager.engine = MagicMock()
-        manager.engine.generate = MagicMock(return_value=_make_vllm_output_mock()())
+        manager.engine.generate = AsyncMock(return_value=_make_vllm_output_mock())
 
         payload = {
             "prompt": "일반 질문입니다.",
@@ -587,7 +585,7 @@ class TestGenerateEndpoint:
         manager.retriever = MagicMock()
         manager.retriever.search = MagicMock(return_value=[])
         manager.engine = MagicMock()
-        manager.engine.generate = MagicMock(return_value=_make_vllm_output_mock()())
+        manager.engine.generate = AsyncMock(return_value=_make_vllm_output_mock())
 
         payload = {
             "prompt": "테스트 프롬프트",
@@ -623,7 +621,7 @@ class TestGenerateEndpoint:
         manager.retriever = MagicMock()
         manager.retriever.search = MagicMock(return_value=[])
         manager.engine = MagicMock()
-        manager.engine.generate = MagicMock(return_value=_make_vllm_output_mock()())
+        manager.engine.generate = AsyncMock(return_value=_make_vllm_output_mock())
 
         payload = {
             "prompt": "테스트",
@@ -747,7 +745,7 @@ def client_with_classifier(client):
         )
     manager.agent_manager = AgentManager(tmpdir)
     manager.engine = MagicMock()
-    manager.engine.generate = MagicMock(return_value=_make_classify_output_mock()())
+    manager.engine.generate = AsyncMock(return_value=_make_classify_output_mock())
 
     yield client
 
@@ -775,8 +773,8 @@ class TestClassifyEndpoint:
 
     def test_classify_invalid_json_returns_error(self, client_with_classifier):
         """LLM이 비-JSON 응답 시 classification=null + classification_error 반환."""
-        manager.engine.generate = MagicMock(
-            return_value=_make_vllm_output_mock("이것은 JSON이 아닙니다.")()
+        manager.engine.generate = AsyncMock(
+            return_value=_make_vllm_output_mock("이것은 JSON이 아닙니다.")
         )
         resp = client_with_classifier.post("/v1/classify", json={"prompt": "테스트 민원"})
         assert resp.status_code == 200
@@ -786,10 +784,10 @@ class TestClassifyEndpoint:
 
     def test_classify_invalid_category_returns_error(self, client_with_classifier):
         """LLM이 허용되지 않은 category를 반환하면 classification_error가 설정된다."""
-        manager.engine.generate = MagicMock(
+        manager.engine.generate = AsyncMock(
             return_value=_make_vllm_output_mock(
                 '{"category": "invalid_cat", "confidence": 0.9, "reason": "test"}'
-            )()
+            )
         )
         resp = client_with_classifier.post("/v1/classify", json={"prompt": "테스트 민원"})
         assert resp.status_code == 200

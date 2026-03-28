@@ -12,7 +12,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.security import APIKeyHeader
 from loguru import logger
-from vllm import AsyncLLM, SamplingParams
+try:
+    from vllm import AsyncLLM, SamplingParams
+except ImportError:
+    try:
+        from vllm.engine.async_llm_engine import AsyncLLMEngine as AsyncLLM
+        from vllm.sampling_params import SamplingParams
+    except ImportError:
+        AsyncLLM = None
+        SamplingParams = None
 
 # SKIP_MODEL_LOAD: E2E 테스트 등 모델 없이 서버만 기동할 때 사용
 SKIP_MODEL_LOAD = os.getenv("SKIP_MODEL_LOAD", "false").lower() in ("true", "1", "yes")

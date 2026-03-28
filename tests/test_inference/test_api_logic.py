@@ -3,31 +3,34 @@ import sys
 import importlib.util
 from unittest.mock import MagicMock, patch, AsyncMock
 
-# transformers 로드 시 faiss.__spec__ ValueError 방지 (CI 환경용)
-original_find_spec = importlib.util.find_spec
+# ---------------------------------------------------------------------------
+# 무거운 의존성 mock 등록 (import 전에 등록해야 함)
+# ---------------------------------------------------------------------------
+_vllm_mock = MagicMock()
+_vllm_mock.AsyncLLM = MagicMock()
+_vllm_mock.SamplingParams = MagicMock()
+sys.modules.setdefault("vllm", _vllm_mock)
+sys.modules.setdefault("vllm.engine", _vllm_mock)
+sys.modules.setdefault("vllm.engine.arg_utils", _vllm_mock)
+sys.modules.setdefault("vllm.engine.async_llm_engine", _vllm_mock)
+sys.modules.setdefault("vllm.sampling_params", _vllm_mock)
 
+sys.modules.setdefault("sentence_transformers", MagicMock())
+sys.modules.setdefault("transformers", MagicMock())
+sys.modules.setdefault("transformers.modeling_rope_utils", MagicMock())
+sys.modules.setdefault("transformers.utils", MagicMock())
+sys.modules.setdefault("transformers.utils.generic", MagicMock())
+if "torch" not in sys.modules:
+    sys.modules["torch"] = MagicMock()
 
-def mocked_find_spec(name, package=None):
-    try:
-        return original_find_spec(name, package)
-    except ValueError:
-        if name == "faiss":
-            return None
-        raise
+import pytest
+from fastapi.testclient import TestClient
 
+# vllm_stabilizer의 apply_transformers_patch를 no-op 처리 후 임포트
+with patch("src.inference.vllm_stabilizer.apply_transformers_patch"):
+    import src.inference.api_server as api_server
 
-# 1. faiss 에러 방지 패치를 먼저 적용
-with patch("importlib.util.find_spec", side_effect=mocked_find_spec):
-    import pytest
-    from fastapi.testclient import TestClient
-
-    # 2. vLLM 엔진 로드를 방지하기 위한 패치 적용 후 임포트
-    with patch("vllm.engine.async_llm_engine.AsyncLLMEngine.from_engine_args"), patch(
-        "src.inference.api_server.vLLMEngineManager.initialize", side_effect=lambda: None
-    ):
-        import src.inference.api_server as api_server
-
-        app = api_server.app
+    app = api_server.app
 
 client = TestClient(app)
 
