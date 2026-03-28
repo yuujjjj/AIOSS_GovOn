@@ -1,0 +1,31 @@
+name: PR Cleanup
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup-preview:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout gh-pages branch
+        uses: actions/checkout@v6
+        with:
+          ref: gh-pages
+
+      - name: Delete PR Preview folder
+        run: |
+          PREVIEW_DIR="preview/pr-${{ github.event.pull_request.number }}"
+          if [ -d "$PREVIEW_DIR" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git rm -rf "$PREVIEW_DIR"
+            git commit -m "chore(cleanup): PR #${{ github.event.pull_request.number }} 프리뷰 삭제"
+            git push origin gh-pages
+            echo "PR #${{ github.event.pull_request.number }} 프리뷰 폴더가 삭제되었습니다."
+          else
+            echo "삭제할 프리뷰 폴더가 존재하지 않습니다."
+          fi

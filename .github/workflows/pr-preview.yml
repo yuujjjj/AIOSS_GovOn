@@ -14,13 +14,14 @@ concurrency:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  PREVIEW_PATH: /GovOn/preview/pr-${{ github.event.pull_request.number }}
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
 
 jobs:
-  build-preview:
+  build-and-deploy-preview:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -36,70 +37,57 @@ jobs:
         run: npm ci
         working-directory: ./frontend
 
-      - name: Build with Next.js
+      - name: Build with Next.js (Preview Path)
         run: npx next build
         working-directory: ./frontend
+        env:
+          NEXT_PUBLIC_BASE_PATH: ${{ env.PREVIEW_PATH }}
 
-      - name: Upload preview artifact
-        uses: actions/upload-artifact@v7
+      - name: Deploy Preview to gh-pages
+        uses: JamesIves/github-pages-deploy-action@v4
         with:
-          name: pr-preview-${{ github.event.pull_request.number }}
-          path: ./frontend/out
-          retention-days: 7
+          folder: frontend/out
+          target-folder: preview/pr-${{ github.event.pull_request.number }}
+          branch: gh-pages
+          clean: false # Do not delete other previews or the main site
 
-      - name: Generate preview summary
-        run: |
-          echo "### PR Preview Build (Next.js)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| PR | #${{ github.event.pull_request.number }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Branch | ${{ github.head_ref }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Build Status | Success |" >> $GITHUB_STEP_SUMMARY
-          FILE_COUNT=$(find ./frontend/out -type f | wc -l)
-          TOTAL_SIZE=$(du -sh ./frontend/out | cut -f1)
-          echo "| Files | ${FILE_COUNT} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Size | ${TOTAL_SIZE} |" >> $GITHUB_STEP_SUMMARY
-
-      - name: Comment PR with preview info
+      - name: Comment PR with Live Preview Link
         uses: actions/github-script@v8
         with:
           script: |
             const prNumber = context.payload.pull_request.number;
-            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-            const artifactName = `pr-preview-${prNumber}`;
+            const previewUrl = `https://govon-org.github.io${process.env.PREVIEW_PATH}/`;
 
             const body = [
-              `### PR Preview Build (Next.js)`,
+              `### 🚀 PR 실시간 프리뷰 배포 완료`,
               ``,
-              `| Item | Value |`,
+              `| 항목 | 상세 정보 |`,
               `|------|-------|`,
-              `| Status | Build successful |`,
-              `| Branch | \`${context.payload.pull_request.head.ref}\` |`,
-              `| Commit | \`${context.payload.pull_request.head.sha.substring(0, 7)}\` |`,
-              `| Artifact | \`${artifactName}\` ([다운로드](${runUrl})) |`,
+              `| **Preview URL** | [**여기서 확인하기**](${previewUrl}) |`,
+              `| **배포 경로** | \`${process.env.PREVIEW_PATH}\` |`,
+              `| **빌드 상태** | ✅ 성공 |`,
+              `| **브랜치** | \`${context.payload.pull_request.head.ref}\` |`,
               ``,
-              `> Next.js 정적 빌드 결과물이 생성되었습니다. Actions 페이지에서 다운로드하여 로컬에서 확인할 수 있습니다.`,
-              `> 머지 시 GitHub Pages(https://govon-org.github.io/GovOn/)에 자동 배포됩니다.`,
+              `> ⚠️ 정적 자원(JS, CSS)이 로드되지 않을 경우 페이지를 새로고침해 주세요.`,
+              `> 머지 또는 PR 종료 시 이 프리뷰 폴더는 자동으로 삭제됩니다.`,
             ].join('\n');
 
-            // Find and update existing comment or create new one
-            const comments = await github.rest.issues.listComments({
+            const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: prNumber,
             });
 
-            const existingComment = comments.data.find(c =>
+            const botComment = comments.find(c =>
               c.user.login === 'github-actions[bot]' &&
-              c.body.includes('PR Preview Build (Next.js)')
+              c.body.includes('🚀 PR 실시간 프리뷰 배포 완료')
             );
 
-            if (existingComment) {
+            if (botComment) {
               await github.rest.issues.updateComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                comment_id: existingComment.id,
+                comment_id: botComment.id,
                 body: body,
               });
             } else {
