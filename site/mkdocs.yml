@@ -61,7 +61,9 @@ markdown_extensions:
 
 nav:
   - 홈: index.md
-  - 발표자료: presentation.md
+  - 발표자료:
+      - GovOn 프로젝트 발표자료: presentation.md
+      - AI 기본계획 (2026~2028): national-presentation.md
   - 아키텍처:
       - 시스템 구성도: architecture/overview.md
       - ADR: architecture/adr/index.md
