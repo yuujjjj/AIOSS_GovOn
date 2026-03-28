@@ -82,9 +82,24 @@ def _make_vllm_output_mock(
 
 @pytest.fixture(autouse=True)
 def _patch_lifespan():
-    """lifespan 이벤트의 manager.initialize()를 mock하여 무거운 초기화를 방지한다."""
+    """lifespan 이벤트의 manager.initialize()를 mock하여 무거운 초기화를 방지한다.
+
+    SKIP_MODEL_LOAD=true 환경(CI)에서는 SamplingParams가 api_server 모듈에
+    import되지 않으므로, classify/generate 엔드포인트에서 NameError가 발생한다.
+    이를 방지하기 위해 SamplingParams를 MagicMock으로 패치한다.
+    """
+    import src.inference.api_server as _api_mod
+
+    _needs_sampling_patch = not hasattr(_api_mod, "SamplingParams") or not callable(
+        getattr(_api_mod, "SamplingParams", None)
+    )
+
     with patch.object(manager, "initialize", new_callable=AsyncMock):
-        yield
+        if _needs_sampling_patch:
+            with patch.object(_api_mod, "SamplingParams", MagicMock(), create=True):
+                yield
+        else:
+            yield
 
 
 @pytest.fixture
@@ -166,17 +181,23 @@ def client_with_index(client, test_index_manager, mock_embed_model):
     original_index_manager = getattr(manager, "index_manager", None)
     original_embed_model = getattr(manager, "embed_model", None)
     original_retriever = getattr(manager, "retriever", None)
+    original_engine = getattr(manager, "engine", None)
 
     manager.index_manager = test_index_manager
     manager.embed_model = mock_embed_model
     if original_retriever is None:
         manager.retriever = MagicMock()
+    # engine이 None이면 generate 엔드포인트에서 500 에러가 발생하므로 기본 mock 설정
+    if manager.engine is None:
+        manager.engine = MagicMock()
+        manager.engine.generate = MagicMock(return_value=_make_vllm_output_mock()())
 
     yield client
 
     manager.index_manager = original_index_manager
     manager.embed_model = original_embed_model
     manager.retriever = original_retriever
+    manager.engine = original_engine
 
 
 @pytest.fixture
