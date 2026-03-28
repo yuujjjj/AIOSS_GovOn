@@ -12,9 +12,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.security import APIKeyHeader
 from loguru import logger
-from vllm.engine.arg_utils import AsyncEngineArgs
-from vllm.engine.async_llm_engine import AsyncLLMEngine
-from vllm.sampling_params import SamplingParams
+
+# SKIP_MODEL_LOAD: E2E 테스트 등 모델 없이 서버만 기동할 때 사용
+SKIP_MODEL_LOAD = os.getenv("SKIP_MODEL_LOAD", "false").lower() in ("true", "1", "yes")
 
 from .agent_manager import AgentManager
 from .bm25_indexer import BM25Indexer
@@ -34,7 +34,12 @@ from .schemas import (
     StreamResponse,
 )
 from .feature_flags import FeatureFlags
-from .vllm_stabilizer import apply_transformers_patch
+
+if not SKIP_MODEL_LOAD:
+    from vllm.engine.arg_utils import AsyncEngineArgs
+    from vllm.engine.async_llm_engine import AsyncLLMEngine
+    from vllm.sampling_params import SamplingParams
+    from .vllm_stabilizer import apply_transformers_patch
 
 # --- Rate Limiting (optional) ---
 try:
@@ -74,8 +79,9 @@ TRUST_REMOTE_CODE = True
 _PROJECT_ROOT = str(Path(__file__).resolve().parent.parent.parent)
 AGENTS_DIR = os.getenv("AGENTS_DIR", os.path.join(_PROJECT_ROOT, "agents"))
 
-# Apply EXAONE-specific runtime patches
-apply_transformers_patch()
+# Apply EXAONE-specific runtime patches (모델 로드 시에만)
+if not SKIP_MODEL_LOAD:
+    apply_transformers_patch()
 
 
 class vLLMEngineManager:
@@ -93,6 +99,10 @@ class vLLMEngineManager:
         self.pii_masker = None
 
     async def initialize(self):
+        if SKIP_MODEL_LOAD:
+            logger.info("SKIP_MODEL_LOAD=true: 모델 및 인덱스 로딩을 건너뜁니다 (E2E 테스트 모드)")
+            return
+
         # 1. Initialize Optimized vLLM Engine
         engine_args = AsyncEngineArgs(
             model=MODEL_PATH,

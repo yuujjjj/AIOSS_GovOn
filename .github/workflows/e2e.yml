@@ -38,6 +38,12 @@ jobs:
         uses: ./.github/actions/setup-python-uv
         with:
           python-version: '3.10'
+          extras: '--extra dev'
+
+      - name: E2E 테스트용 최소 서버 의존성 설치
+        run: |
+          uv pip install fastapi uvicorn \
+            faiss-cpu sentence-transformers rank-bm25
 
       - name: Node.js 환경 설정
         uses: actions/setup-node@v4
@@ -53,7 +59,7 @@ jobs:
       - name: FastAPI 서버 시작 (테스트 모드)
         run: |
           SKIP_MODEL_LOAD=true \
-          uvicorn src.inference.api_server:app \
+          uv run uvicorn src.inference.api_server:app \
             --host 0.0.0.0 \
             --port 8000 &
 
@@ -66,6 +72,12 @@ jobs:
             echo "서버 시작 대기 중... ($i/30)"
             sleep 1
           done
+
+          # 서버가 준비되지 않으면 실패
+          if ! curl -s http://localhost:8000/health > /dev/null 2>&1; then
+            echo "ERROR: FastAPI 서버가 30초 내에 시작되지 않았습니다"
+            exit 1
+          fi
 
       - name: E2E 테스트 실행
         run: npx playwright test
