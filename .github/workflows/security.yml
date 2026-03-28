@@ -109,12 +109,12 @@ jobs:
           retention-days: 30
           if-no-files-found: ignore
 
-      - name: Create Issue on vulnerability detection
+      - name: Create or Update Issue on vulnerability detection
         if: always() && steps.audit.outputs.vuln_count != '0'
         uses: actions/github-script@v8
         with:
           script: |
-            const vulnCount = '${{ steps.audit.outputs.vuln_count }}';
+            const vulnCount = parseInt('${{ steps.audit.outputs.vuln_count }}');
             const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const today = new Date().toISOString().split('T')[0];
 
@@ -126,16 +126,32 @@ jobs:
               state: 'open',
             });
 
-            // If an open issue already exists, add a comment instead of creating a new one
             if (existingIssues.data.length > 0) {
               const existing = existingIssues.data[0];
+              
+              // Get last comment to check for duplicates
+              const comments = await github.rest.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+              });
+              
+              const lastBotComment = comments.data.reverse().find(c => c.user.login === 'github-actions[bot]');
+              
+              // Only comment if count changed or last comment is old (to avoid spam)
+              // Here we check if the count is already reported in the body or last comment
+              if (lastBotComment && lastBotComment.body.includes(`감지된 취약점 | ${vulnCount}건`)) {
+                core.info(`Vulnerability count (${vulnCount}) hasn't changed since last report. Skipping comment.`);
+                return;
+              }
+
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: existing.number,
-                body: `## 보안 스캔 업데이트 (${today})\n\n| 항목 | 값 |\n|------|----|\n| 감지된 취약점 | ${vulnCount}건 |\n| 스캔 일시 | ${new Date().toISOString()} |\n| Actions Run | [링크](${runUrl}) |`,
+                body: `## 🔍 보안 스캔 업데이트 (${today})\n\n| 항목 | 값 |\n|------|----|\n| 감지된 취약점 | **${vulnCount}건** |\n| 상태 | 여전히 조치 필요 |\n| Actions Run | [상세 로그 확인](${runUrl}) |\n\n> 동일한 취약점 개수가 감지될 경우 중복 코멘트 작성을 방지하도록 개선되었습니다.`,
               });
-              core.info(`Updated existing issue #${existing.number} with comment`);
+              core.info(`Updated existing issue #${existing.number} with new vulnerability data`);
               return;
             }
 
