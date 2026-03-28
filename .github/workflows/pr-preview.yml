@@ -49,7 +49,11 @@ jobs:
           folder: frontend/out
           target-folder: preview/pr-${{ github.event.pull_request.number }}
           branch: gh-pages
+<<<<<<< HEAD
           clean: false # Do not delete other previews or the main site
+=======
+          clean: false
+>>>>>>> 2185a1195 (fix(deploy): GitHub Pages 배포 방식 통일 및 프리뷰 고도화)
 
       - name: Comment PR with Live Preview Link
         uses: actions/github-script@v8

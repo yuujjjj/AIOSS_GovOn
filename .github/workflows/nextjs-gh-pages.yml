@@ -13,7 +13,11 @@ on:
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
+<<<<<<< HEAD
   contents: read
+=======
+  contents: write
+>>>>>>> 2185a1195 (fix(deploy): GitHub Pages 배포 방식 통일 및 프리뷰 고도화)
   pages: write
   id-token: write
 
@@ -27,13 +31,19 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+<<<<<<< HEAD
   # Build job
   build:
+=======
+  # Build and deploy job
+  build-and-deploy:
+>>>>>>> 2185a1195 (fix(deploy): GitHub Pages 배포 방식 통일 및 프리뷰 고도화)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
+<<<<<<< HEAD
       - name: Detect package manager
         id: detect-package-manager
         run: |
@@ -47,10 +57,13 @@ jobs:
             exit 1
           fi
 
+=======
+>>>>>>> 2185a1195 (fix(deploy): GitHub Pages 배포 방식 통일 및 프리뷰 고도화)
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+<<<<<<< HEAD
           cache: ${{ steps.detect-package-manager.outputs.manager }}
           cache-dependency-path: frontend/package-lock.json
 
@@ -92,3 +105,24 @@ jobs:
           echo "| Branch | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Status | Deployed |" >> $GITHUB_STEP_SUMMARY
+=======
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: ./frontend
+
+      - name: Build with Next.js
+        run: npx next build
+        working-directory: ./frontend
+
+      - name: Deploy to gh-pages
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: frontend/out
+          branch: gh-pages
+          clean: true
+          clean-exclude: |
+            preview/**
+>>>>>>> 2185a1195 (fix(deploy): GitHub Pages 배포 방식 통일 및 프리뷰 고도화)
