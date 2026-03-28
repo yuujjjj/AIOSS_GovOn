@@ -1,3 +1,8 @@
+---
+hide:
+  - toc
+---
+
 # 프로젝트 발표자료
 
 **GovOn — 폐쇄망 온프레미스 AI 민원 처리 인프라**
@@ -6,11 +11,7 @@
 
 [:material-download: PDF 다운로드](assets/GovOn_Secure_On-Premise_AI.pdf){ .md-button .md-button--primary }
 
----
-
-<div style="width: 100%; height: 80vh;">
-  <embed src="assets/GovOn_Secure_On-Premise_AI.pdf" type="application/pdf" width="100%" height="100%" />
-</div>
+<iframe src="https://docs.google.com/gview?url=https://govon-org.github.io/GovOn/assets/GovOn_Secure_On-Premise_AI.pdf&embedded=true" style="width:100%; height:80vh; border:none;" allowfullscreen></iframe>
 
 !!! tip "PDF가 표시되지 않는 경우"
-    브라우저에서 PDF 뷰어를 지원하지 않을 경우, 위의 **PDF 다운로드** 버튼을 클릭하여 직접 확인하세요.
+    Google Docs Viewer 로딩에 시��이 걸릴 수 있습니다. 표시되지 않으면 위의 **PDF 다운로드** 버튼을 클릭하세요.
