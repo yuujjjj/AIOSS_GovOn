@@ -58,3 +58,6 @@ jobs:
             --max_samples ${{ github.event.inputs.max_samples || '100' }}
         env:
           WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
+          WANDB_PROJECT: govon-model-eval
+          WANDB_NAME: manual-eval-${{ github.run_id }}
+          WANDB_LOG_MODEL: "false"
