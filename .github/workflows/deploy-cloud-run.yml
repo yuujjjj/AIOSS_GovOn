@@ -38,6 +38,7 @@ env:
 permissions:
   contents: read
   id-token: write
+  issues: write
 
 jobs:
   deploy:
@@ -183,13 +184,21 @@ jobs:
         run: |
           echo "::warning::Health check failed! Initiating rollback..."
 
-          REVISIONS=$(gcloud run revisions list \
+          REVISION_COUNT=$(gcloud run revisions list \
+            --service=${{ env.SERVICE_NAME }} \
+            --region=${{ secrets.GCP_REGION || 'asia-northeast3' }} \
+            --format='value(REVISION)' 2>/dev/null | wc -l | tr -d ' ')
+
+          if [ "$REVISION_COUNT" -lt 2 ]; then
+            echo "::warning::No previous revision available for rollback (only $REVISION_COUNT revision exists). Skipping rollback."
+            exit 0
+          fi
+
+          PREVIOUS=$(gcloud run revisions list \
             --service=${{ env.SERVICE_NAME }} \
             --region=${{ secrets.GCP_REGION || 'asia-northeast3' }} \
             --format='value(REVISION)' \
-            --limit=2 2>/dev/null)
-
-          PREVIOUS=$(echo "$REVISIONS" | tail -1)
+            --limit=2 2>/dev/null | tail -1)
 
           if [ -n "$PREVIOUS" ]; then
             gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
@@ -197,7 +206,7 @@ jobs:
               --to-revisions="$PREVIOUS=100"
             echo "Rolled back to revision: $PREVIOUS"
           else
-            echo "::error::No previous revision available for rollback"
+            echo "::warning::Could not determine previous revision. Skipping rollback."
           fi
 
       - name: Rollback summary
