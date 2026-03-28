@@ -4,6 +4,9 @@ on:
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/pr-preview.yml"
 
 concurrency:
   group: pr-preview-${{ github.event.pull_request.number }}
@@ -22,33 +25,39 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-
-      - name: Build with Jekyll
-        uses: actions/jekyll-build-pages@v1
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          source: ./
-          destination: ./_site
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: ./frontend
+
+      - name: Build with Next.js
+        run: npx next build
+        working-directory: ./frontend
 
       - name: Upload preview artifact
         uses: actions/upload-artifact@v7
         with:
           name: pr-preview-${{ github.event.pull_request.number }}
-          path: ./_site
+          path: ./frontend/out
           retention-days: 7
 
       - name: Generate preview summary
         run: |
-          echo "### PR Preview Build" >> $GITHUB_STEP_SUMMARY
+          echo "### PR Preview Build (Next.js)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| PR | #${{ github.event.pull_request.number }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Branch | ${{ github.head_ref }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Build Status | Success |" >> $GITHUB_STEP_SUMMARY
-          FILE_COUNT=$(find ./_site -type f | wc -l)
-          TOTAL_SIZE=$(du -sh ./_site | cut -f1)
+          FILE_COUNT=$(find ./frontend/out -type f | wc -l)
+          TOTAL_SIZE=$(du -sh ./frontend/out | cut -f1)
           echo "| Files | ${FILE_COUNT} |" >> $GITHUB_STEP_SUMMARY
           echo "| Size | ${TOTAL_SIZE} |" >> $GITHUB_STEP_SUMMARY
 
@@ -61,7 +70,7 @@ jobs:
             const artifactName = `pr-preview-${prNumber}`;
 
             const body = [
-              `### PR Preview Build`,
+              `### PR Preview Build (Next.js)`,
               ``,
               `| Item | Value |`,
               `|------|-------|`,
@@ -70,8 +79,8 @@ jobs:
               `| Commit | \`${context.payload.pull_request.head.sha.substring(0, 7)}\` |`,
               `| Artifact | \`${artifactName}\` ([다운로드](${runUrl})) |`,
               ``,
-              `> Preview artifact가 빌드되었습니다. Actions 페이지에서 다운로드하여 로컬에서 확인할 수 있습니다.`,
-              `> 머지 시 GitHub Pages에 자동 배포됩니다.`,
+              `> Next.js 정적 빌드 결과물이 생성되었습니다. Actions 페이지에서 다운로드하여 로컬에서 확인할 수 있습니다.`,
+              `> 머지 시 GitHub Pages(https://govon-org.github.io/GovOn/)에 자동 배포됩니다.`,
             ].join('\n');
 
             // Find and update existing comment or create new one
@@ -83,7 +92,7 @@ jobs:
 
             const existingComment = comments.data.find(c =>
               c.user.login === 'github-actions[bot]' &&
-              c.body.includes('PR Preview Build')
+              c.body.includes('PR Preview Build (Next.js)')
             );
 
             if (existingComment) {
