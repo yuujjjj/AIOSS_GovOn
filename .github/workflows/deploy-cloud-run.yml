@@ -98,7 +98,10 @@ jobs:
       - name: Deploy to Cloud Run
         id: deploy
         run: |
-          RESULT=$(gcloud run deploy ${{ env.SERVICE_NAME }} \
+          echo "Deploying image: ${{ steps.image.outputs.full_image }}"
+          
+          # Deploy command without || true to catch actual errors
+          if ! gcloud run deploy ${{ env.SERVICE_NAME }} \
             --image=${{ steps.image.outputs.full_image }} \
             --region=${{ secrets.GCP_REGION || 'asia-northeast3' }} \
             --platform=managed \
@@ -111,12 +114,23 @@ jobs:
             --concurrency=80 \
             --set-env-vars="SKIP_MODEL_LOAD=true" \
             --allow-unauthenticated \
-            --format='value(status.url)' 2>&1) || true
+            --format='value(status.url)'; then
+            
+            echo "::error::Cloud Run 배포 명령이 실패했습니다."
+            exit 1
+          fi
 
+          # Get Service URL reliably
           URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
             --region=${{ secrets.GCP_REGION || 'asia-northeast3' }} \
-            --format='value(status.url)' 2>/dev/null || echo "")
+            --format='value(status.url)' 2>/dev/null)
+          
+          if [ -z "$URL" ]; then
+            echo "::error::배포는 성공했으나 서비스 URL을 가져오지 못했습니다."
+            exit 1
+          fi
 
+          # Get Revision reliably
           REVISION=$(gcloud run revisions list \
             --service=${{ env.SERVICE_NAME }} \
             --region=${{ secrets.GCP_REGION || 'asia-northeast3' }} \
