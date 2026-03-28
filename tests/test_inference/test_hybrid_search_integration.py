@@ -21,11 +21,14 @@ import unittest.mock as mock
 # ---------------------------------------------------------------------------
 # 무거운 외부 의존성 mock (import 전에 등록)
 # ---------------------------------------------------------------------------
-sys.modules.setdefault("vllm", mock.MagicMock())
-sys.modules.setdefault("vllm.engine", mock.MagicMock())
-sys.modules.setdefault("vllm.engine.arg_utils", mock.MagicMock())
-sys.modules.setdefault("vllm.engine.async_llm_engine", mock.MagicMock())
-sys.modules.setdefault("vllm.sampling_params", mock.MagicMock())
+_vllm_mock = mock.MagicMock()
+_vllm_mock.AsyncLLM = mock.MagicMock()
+_vllm_mock.SamplingParams = mock.MagicMock()
+sys.modules.setdefault("vllm", _vllm_mock)
+sys.modules.setdefault("vllm.engine", _vllm_mock)
+sys.modules.setdefault("vllm.engine.arg_utils", _vllm_mock)
+sys.modules.setdefault("vllm.engine.async_llm_engine", _vllm_mock)
+sys.modules.setdefault("vllm.sampling_params", _vllm_mock)
 sys.modules.setdefault("sentence_transformers", mock.MagicMock())
 
 _faiss_module = sys.modules.get("faiss")

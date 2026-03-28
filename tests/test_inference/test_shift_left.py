@@ -25,6 +25,8 @@ import pytest
 # ---------------------------------------------------------------------------
 
 _vllm_mock = MagicMock()
+_vllm_mock.AsyncLLM = MagicMock()
+_vllm_mock.SamplingParams = MagicMock()
 sys.modules.setdefault("vllm", _vllm_mock)
 sys.modules.setdefault("vllm.engine", _vllm_mock)
 sys.modules.setdefault("vllm.engine.arg_utils", _vllm_mock)
@@ -61,18 +63,14 @@ from src.inference.index_manager import IndexType, MultiIndexManager
 def _make_vllm_output_mock(
     text="테스트 응답입니다.", prompt_token_count=5, completion_token_count=10
 ):
-    """vLLM 엔진의 generate 결과를 시뮬레이션하는 async generator를 반환한다."""
+    """vLLM 엔진의 generate 결과를 시뮬레이션하는 mock output 객체를 반환한다."""
     output_mock = MagicMock()
     output_mock.outputs = [MagicMock()]
     output_mock.outputs[0].text = text
     output_mock.outputs[0].token_ids = list(range(completion_token_count))
     output_mock.prompt_token_ids = list(range(prompt_token_count))
     output_mock.finished = True
-
-    async def _gen(*args, **kwargs):
-        yield output_mock
-
-    return _gen
+    return output_mock
 
 
 # ---------------------------------------------------------------------------
@@ -190,7 +188,7 @@ def client_with_index(client, test_index_manager, mock_embed_model):
     # engine이 None이면 generate 엔드포인트에서 500 에러가 발생하므로 기본 mock 설정
     if manager.engine is None:
         manager.engine = MagicMock()
-        manager.engine.generate = MagicMock(return_value=_make_vllm_output_mock()())
+        manager.engine.generate = AsyncMock(return_value=_make_vllm_output_mock())
 
     yield client
 
@@ -220,10 +218,10 @@ def client_with_classifier(client):
         )
     manager.agent_manager = AgentManager(tmpdir)
     manager.engine = MagicMock()
-    manager.engine.generate = MagicMock(
+    manager.engine.generate = AsyncMock(
         return_value=_make_vllm_output_mock(
             '{"category": "traffic", "confidence": 0.95, "reason": "도로 관련 민원"}'
-        )()
+        )
     )
 
     yield client
@@ -366,8 +364,8 @@ class TestClassifyShiftLeft:
 
     def test_classify_json_without_required_fields(self, client_with_classifier):
         """LLM이 필수 필드 누락된 JSON을 반환하면 classification_error가 설정된다."""
-        manager.engine.generate = MagicMock(
-            return_value=_make_vllm_output_mock('{"category": "traffic"}')()
+        manager.engine.generate = AsyncMock(
+            return_value=_make_vllm_output_mock('{"category": "traffic"}')
         )
         resp = client_with_classifier.post("/v1/classify", json={"prompt": "테스트 민원"})
         assert resp.status_code == 200
@@ -377,10 +375,10 @@ class TestClassifyShiftLeft:
 
     def test_classify_confidence_boundary_zero(self, client_with_classifier):
         """confidence=0.0은 유효하다."""
-        manager.engine.generate = MagicMock(
+        manager.engine.generate = AsyncMock(
             return_value=_make_vllm_output_mock(
                 '{"category": "traffic", "confidence": 0.0, "reason": "확신 없음"}'
-            )()
+            )
         )
         resp = client_with_classifier.post("/v1/classify", json={"prompt": "테스트"})
         assert resp.status_code == 200
@@ -390,10 +388,10 @@ class TestClassifyShiftLeft:
 
     def test_classify_confidence_boundary_one(self, client_with_classifier):
         """confidence=1.0은 유효하다."""
-        manager.engine.generate = MagicMock(
+        manager.engine.generate = AsyncMock(
             return_value=_make_vllm_output_mock(
                 '{"category": "environment", "confidence": 1.0, "reason": "환경 민원 확실"}'
-            )()
+            )
         )
         resp = client_with_classifier.post("/v1/classify", json={"prompt": "테스트"})
         assert resp.status_code == 200
@@ -403,10 +401,10 @@ class TestClassifyShiftLeft:
 
     def test_classify_confidence_out_of_range(self, client_with_classifier):
         """confidence > 1.0이면 classification_error가 설정된다."""
-        manager.engine.generate = MagicMock(
+        manager.engine.generate = AsyncMock(
             return_value=_make_vllm_output_mock(
                 '{"category": "traffic", "confidence": 1.5, "reason": "test"}'
-            )()
+            )
         )
         resp = client_with_classifier.post("/v1/classify", json={"prompt": "테스트"})
         assert resp.status_code == 200
@@ -416,10 +414,10 @@ class TestClassifyShiftLeft:
 
     def test_classify_llm_returns_json_with_extra_text(self, client_with_classifier):
         """LLM이 JSON 앞뒤에 텍스트를 붙여도 파싱에 성공한다."""
-        manager.engine.generate = MagicMock(
+        manager.engine.generate = AsyncMock(
             return_value=_make_vllm_output_mock(
                 '분석 결과:\n{"category": "welfare", "confidence": 0.8, "reason": "복지 민원"}\n이상입니다.'
-            )()
+            )
         )
         resp = client_with_classifier.post("/v1/classify", json={"prompt": "복지 관련 문의"})
         assert resp.status_code == 200
@@ -438,10 +436,10 @@ class TestClassifyShiftLeft:
             "other",
         ]
         for cat in valid_categories:
-            manager.engine.generate = MagicMock(
+            manager.engine.generate = AsyncMock(
                 return_value=_make_vllm_output_mock(
                     f'{{"category": "{cat}", "confidence": 0.9, "reason": "테스트"}}'
-                )()
+                )
             )
             resp = client_with_classifier.post("/v1/classify", json={"prompt": f"{cat} 관련 민원"})
             assert resp.status_code == 200
@@ -482,7 +480,7 @@ class TestGenerateShiftLeft:
         manager.retriever = MagicMock()
         manager.retriever.search = MagicMock(return_value=[])
         manager.engine = MagicMock()
-        manager.engine.generate = MagicMock(return_value=_make_vllm_output_mock()())
+        manager.engine.generate = AsyncMock(return_value=_make_vllm_output_mock())
 
         payload = {
             "prompt": "테스트 프롬프트",
@@ -505,7 +503,7 @@ class TestGenerateShiftLeft:
         manager.retriever = MagicMock()
         manager.retriever.search = MagicMock(return_value=[])
         manager.engine = MagicMock()
-        manager.engine.generate = MagicMock(return_value=_make_vllm_output_mock()())
+        manager.engine.generate = AsyncMock(return_value=_make_vllm_output_mock())
 
         payload = {
             "prompt": "테스트",
@@ -530,7 +528,7 @@ class TestGenerateShiftLeft:
             ]
         )
         manager.engine = MagicMock()
-        manager.engine.generate = MagicMock(return_value=_make_vllm_output_mock()())
+        manager.engine.generate = AsyncMock(return_value=_make_vllm_output_mock())
 
         payload = {
             "prompt": "도로 보수 요청합니다.",
@@ -548,7 +546,7 @@ class TestGenerateShiftLeft:
         """use_rag=False일 때 retriever.search가 호출되지 않는다."""
         manager.retriever = MagicMock()
         manager.engine = MagicMock()
-        manager.engine.generate = MagicMock(return_value=_make_vllm_output_mock()())
+        manager.engine.generate = AsyncMock(return_value=_make_vllm_output_mock())
 
         payload = {
             "prompt": "일반 질문",
@@ -567,8 +565,8 @@ class TestGenerateShiftLeft:
         manager.retriever = MagicMock()
         manager.retriever.search = MagicMock(return_value=[])
         manager.engine = MagicMock()
-        manager.engine.generate = MagicMock(
-            return_value=_make_vllm_output_mock(prompt_token_count=8, completion_token_count=15)()
+        manager.engine.generate = AsyncMock(
+            return_value=_make_vllm_output_mock(prompt_token_count=8, completion_token_count=15)
         )
 
         payload = {
@@ -587,10 +585,10 @@ class TestGenerateShiftLeft:
         manager.retriever = MagicMock()
         manager.retriever.search = MagicMock(return_value=[])
         manager.engine = MagicMock()
-        manager.engine.generate = MagicMock(
+        manager.engine.generate = AsyncMock(
             return_value=_make_vllm_output_mock(
                 "<thought>내부 추론 과정</thought>최종 답변입니다."
-            )()
+            )
         )
 
         payload = {
@@ -610,7 +608,7 @@ class TestGenerateShiftLeft:
         manager.retriever = MagicMock()
         manager.retriever.search = MagicMock(return_value=[])
         manager.engine = MagicMock()
-        manager.engine.generate = MagicMock(return_value=_make_vllm_output_mock()())
+        manager.engine.generate = AsyncMock(return_value=_make_vllm_output_mock())
 
         payload = {
             "prompt": "테스트",
@@ -627,7 +625,7 @@ class TestGenerateShiftLeft:
         manager.retriever = MagicMock()
         manager.retriever.search = MagicMock(return_value=[])
         manager.engine = MagicMock()
-        manager.engine.generate = MagicMock(return_value=_make_vllm_output_mock()())
+        manager.engine.generate = AsyncMock(return_value=_make_vllm_output_mock())
 
         payload = {
             "prompt": "테스트",
@@ -643,7 +641,7 @@ class TestGenerateShiftLeft:
         manager.retriever = MagicMock()
         manager.retriever.search = MagicMock(return_value=[])
         manager.engine = MagicMock()
-        manager.engine.generate = MagicMock(return_value=_make_vllm_output_mock()())
+        manager.engine.generate = AsyncMock(return_value=_make_vllm_output_mock())
 
         payload = {
             "prompt": "테스트",
@@ -670,7 +668,7 @@ class TestGenerateShiftLeft:
         manager.retriever = MagicMock()
         manager.retriever.search = MagicMock(return_value=[])
         manager.engine = MagicMock()
-        manager.engine.generate = MagicMock(return_value=_make_vllm_output_mock()())
+        manager.engine.generate = AsyncMock(return_value=_make_vllm_output_mock())
 
         payload = {
             "prompt": "테스트",
@@ -1152,10 +1150,15 @@ class TestStreamShiftLeft:
 
     @pytest.fixture
     def client_with_stream(self, client_with_index):
-        """vLLM generate를 mock하여 스트리밍 응답을 시뮬레이션한다."""
-        gen_fn = _make_vllm_output_mock(text="스트리밍 테스트 응답입니다.")
-        with patch.object(manager, "generate", new_callable=AsyncMock) as mock_gen:
-            mock_gen.return_value = (gen_fn(), [])
+        """vLLM generate_stream을 mock하여 스트리밍 응답을 시뮬레이션한다."""
+        output_mock = _make_vllm_output_mock(text="스트리밍 테스트 응답입니다.")
+        output_mock.finished = True
+
+        async def _stream():
+            yield output_mock
+
+        with patch.object(manager, "generate_stream", new_callable=AsyncMock) as mock_gen:
+            mock_gen.return_value = (_stream(), [])
             yield client_with_index
 
     def test_stream_returns_event_stream_content_type(self, client_with_stream):

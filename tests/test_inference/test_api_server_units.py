@@ -14,6 +14,8 @@ import pytest
 # 무거운 의존성 mock 등록
 # ---------------------------------------------------------------------------
 _vllm_mock = MagicMock()
+_vllm_mock.AsyncLLM = MagicMock()
+_vllm_mock.SamplingParams = MagicMock()
 sys.modules.setdefault("vllm", _vllm_mock)
 sys.modules.setdefault("vllm.engine", _vllm_mock)
 sys.modules.setdefault("vllm.engine.arg_utils", _vllm_mock)

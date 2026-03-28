@@ -114,7 +114,10 @@ def main():
         return
 
     test_data = load_test_data(TEST_DATA_PATH, max_samples=20)
-    tokenizer = llm.get_tokenizer()
+    # vLLM 0.14.x: get_tokenizer() deprecated, load separately
+    from transformers import AutoTokenizer
+
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, trust_remote_code=True)
 
     print("\n[M3 Roadmap] Running Batch Evaluation...")
 

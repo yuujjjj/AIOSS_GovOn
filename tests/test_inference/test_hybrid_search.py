@@ -19,10 +19,14 @@ import sys
 import unittest.mock as mock
 
 # 무거운 모듈 mock (import 전에)
-sys.modules.setdefault("vllm", mock.MagicMock())
-sys.modules.setdefault("vllm.engine.arg_utils", mock.MagicMock())
-sys.modules.setdefault("vllm.engine.async_llm_engine", mock.MagicMock())
-sys.modules.setdefault("vllm.sampling_params", mock.MagicMock())
+_vllm_mock = mock.MagicMock()
+_vllm_mock.AsyncLLM = mock.MagicMock()
+_vllm_mock.SamplingParams = mock.MagicMock()
+sys.modules.setdefault("vllm", _vllm_mock)
+sys.modules.setdefault("vllm.engine", _vllm_mock)
+sys.modules.setdefault("vllm.engine.arg_utils", _vllm_mock)
+sys.modules.setdefault("vllm.engine.async_llm_engine", _vllm_mock)
+sys.modules.setdefault("vllm.sampling_params", _vllm_mock)
 sys.modules.setdefault("sentence_transformers", mock.MagicMock())
 
 # faiss mock

@@ -161,7 +161,12 @@ def compute_bleu_rouge(model, tokenizer, data, max_samples=50):
             encoded = tokenizer.apply_chat_template(
                 messages, tokenize=True, add_generation_prompt=True, return_tensors="pt"
             )
-            input_ids = encoded.input_ids.to(model.device)
+            # transformers 4.53+: apply_chat_template with return_tensors
+            # returns a plain tensor, not a BatchEncoding
+            if isinstance(encoded, torch.Tensor):
+                input_ids = encoded.to(model.device)
+            else:
+                input_ids = encoded.input_ids.to(model.device)
 
             with torch.no_grad():
                 output = model.generate(
@@ -384,7 +389,7 @@ def run_single_experiment(exp_cfg, tokenizer, eval_data):
             train_dataset=dataset["train"],
             eval_dataset=dataset["validation"],
             max_seq_length=2048,
-            tokenizer=tokenizer,
+            processing_class=tokenizer,
             formatting_func=formatting_prompts_func,
             args=training_args,
         )

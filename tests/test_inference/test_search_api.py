@@ -16,11 +16,14 @@ import pytest
 # ---------------------------------------------------------------------------
 
 # vllm 관련 모듈 mock
-sys.modules.setdefault("vllm", MagicMock())
-sys.modules.setdefault("vllm.engine", MagicMock())
-sys.modules.setdefault("vllm.engine.arg_utils", MagicMock())
-sys.modules.setdefault("vllm.engine.async_llm_engine", MagicMock())
-sys.modules.setdefault("vllm.sampling_params", MagicMock())
+_vllm_mock = MagicMock()
+_vllm_mock.AsyncLLM = MagicMock()
+_vllm_mock.SamplingParams = MagicMock()
+sys.modules.setdefault("vllm", _vllm_mock)
+sys.modules.setdefault("vllm.engine", _vllm_mock)
+sys.modules.setdefault("vllm.engine.arg_utils", _vllm_mock)
+sys.modules.setdefault("vllm.engine.async_llm_engine", _vllm_mock)
+sys.modules.setdefault("vllm.sampling_params", _vllm_mock)
 
 # sentence_transformers mock
 sys.modules.setdefault("sentence_transformers", MagicMock())
@@ -116,10 +119,7 @@ class TestGenerateEndpoint:
         mock_output.prompt_token_ids = list(range(20))
 
         async def mock_generate(*args, **kwargs):
-            async def gen():
-                yield mock_output
-
-            return gen(), []
+            return mock_output, []
 
         manager.generate = AsyncMock(side_effect=mock_generate)
         return mock_output
@@ -127,11 +127,8 @@ class TestGenerateEndpoint:
     def test_generate_returns_200(self, client):
         mock_output = self._setup_generate_mock()
 
-        async def fake_generate(request, request_id):
-            async def gen():
-                yield mock_output
-
-            return gen(), []
+        async def fake_generate(request, request_id, flags=None):
+            return mock_output, []
 
         manager.generate = AsyncMock(side_effect=fake_generate)
 
@@ -152,11 +149,8 @@ class TestGenerateEndpoint:
         mock_output.outputs[0].token_ids = list(range(5))
         mock_output.prompt_token_ids = list(range(15))
 
-        async def fake_generate(request, request_id):
-            async def gen():
-                yield mock_output
-
-            return gen(), []
+        async def fake_generate(request, request_id, flags=None):
+            return mock_output, []
 
         manager.generate = AsyncMock(side_effect=fake_generate)
 
