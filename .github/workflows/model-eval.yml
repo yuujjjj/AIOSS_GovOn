@@ -2,12 +2,26 @@ name: Model Evaluation (GitHub GPU)
 
 on:
   workflow_dispatch:
+    inputs:
+      model_path:
+        description: 'Path or ID of the model to evaluate'
+        required: true
+        default: 'models/exaone-merged-v2'
+      test_data:
+        description: 'Path to the test dataset'
+        required: true
+        default: 'data/processed/v2_test.jsonl'
+      max_samples:
+        description: 'Maximum number of samples to evaluate'
+        required: false
+        default: '100'
+
   # pull_request:
-    branches: [ main ]
-    paths:
-      - 'src/training/**'
-      - 'src/evaluation/**'
-      - 'data/processed/v2_*.jsonl'
+  #   branches: [ main ]
+  #   paths:
+  #     - 'src/training/**'
+  #     - 'src/evaluation/**'
+  #     - 'data/processed/v2_*.jsonl'
 
 concurrency:
   group: model-eval-${{ github.ref }}
@@ -20,70 +34,27 @@ permissions:
 jobs:
   evaluate:
     name: v2 Model Performance Test
-    runs-on:
-  workflow_dispatch: ubuntu-22.04-gpu-t4
-    if: github.event.pull_request.draft == false
-
+    runs-on: ubuntu-22.04-gpu-t4
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false
     steps:
-      - name: Install Git LFS on Self-hosted Runner
-        run: |
-          if ! command -v git-lfs &> /dev/null; then
-            echo "Git LFS not found. Installing..."
-            sudo apt-get update && sudo apt-get install -y git-lfs
-            git lfs install
-          else
-            echo "Git LFS is already installed."
-          fi
-
       - uses: actions/checkout@v6
-        with:
-          lfs: false # 초기 체크아웃 시 LFS 오류 방지
 
-      - name: Pull LFS objects
-        run: git lfs pull
-
-      - name: Install uv
+      - name: Setup Python
         uses: astral-sh/setup-uv@v5
         with:
-          enable-cache: true
-          cache-dependency-glob: "uv.lock"
+          python-version: "3.10"
 
-      - name: Set up Python
-        run: uv python install 3.10
-
-      - name: Install Project Dependencies
+      - name: Install dependencies
         run: |
-          # inference 전용 의존성까지 동기화
-          uv sync --extra dev --extra inference
+          uv pip install --system .
+          uv pip install --system torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+          uv pip install --system autoawq vllm
 
-      - name: Run Evaluation on T4 GPU
+      - name: Run Evaluation
+        run: |
+          python3 -m src.evaluation.evaluate_model \
+            --model_path ${{ github.event.inputs.model_path || 'models/exaone-merged-v2' }} \
+            --test_data ${{ github.event.inputs.test_data || 'data/processed/v2_test.jsonl' }} \
+            --max_samples ${{ github.event.inputs.max_samples || '100' }}
         env:
-          MODEL_PATH: "umyunsang/GovOn-EXAONE-LoRA-v2"
-          DATA_PATH: "data/processed/v2_test.jsonl"
-          GPU_UTILIZATION: 0.7 
-          WANDB_MODE: "online"
           WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
-          WANDB_PROJECT: "GovOn"
-        run: |
-          # 모델 평가 실행 (WANDB_API_KEY는 환경 변수로 자동 인식됨)
-          uv run python -m src.evaluation.evaluate_model_v3_stable \
-            --model_path $MODEL_PATH \
-            --data_path $DATA_PATH \
-            --output_report evaluation_report.md
-
-      - name: Post Results to PR
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const fs = require('fs');
-            const reportPath = 'evaluation_report.md';
-            const body = fs.existsSync(reportPath) 
-              ? `### 🤖 v2 Model Evaluation (NVIDIA T4)\n\n${fs.readFileSync(reportPath, 'utf8')}`
-              : "### 🤖 v2 Model Evaluation\n\n평가 리포트 생성에 실패했습니다.";
-            
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: body
-            })
