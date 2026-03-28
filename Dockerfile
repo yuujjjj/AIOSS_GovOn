@@ -34,8 +34,8 @@ COPY pyproject.toml .
 COPY requirements.txt .
 
 # Install dependencies
-# Note: autoawq and vllm require specific CUDA versions
-RUN python3.10 -m pip install .
+RUN python3.10 -m pip install --no-cache-dir -r requirements.txt
+RUN python3.10 -m pip install --no-cache-dir .
 
 # Copy source code
 COPY src/ ./src/
