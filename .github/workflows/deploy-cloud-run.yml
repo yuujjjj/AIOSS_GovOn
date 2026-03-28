@@ -83,6 +83,15 @@ jobs:
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
 
+      - name: Enable Google Cloud APIs
+        run: |
+          echo "Enabling required APIs..."
+          gcloud services enable run.googleapis.com \
+            iam.googleapis.com \
+            compute.googleapis.com \
+            cloudresourcemanager.googleapis.com \
+            --quiet
+
       - name: Get current revision (for rollback)
         id: current
         continue-on-error: true
