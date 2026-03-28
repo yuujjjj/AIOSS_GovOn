@@ -1,26 +1,26 @@
 # Core ML/DL
-torch>=2.1.0
-transformers>=4.40.0
-accelerate>=0.24.0
+torch>=2.8.0
+transformers>=4.53.0
+accelerate>=1.0.0
 datasets>=2.14.0
 
 # Quantization & Optimization
-bitsandbytes>=0.41.0
+bitsandbytes>=0.44.0
 optimum>=1.13.0
-autoawq>=0.2.0
+autoawq>=0.2.8
 
 # Fine-tuning
-peft>=0.10.0
-trl>=0.7.0
+peft>=0.16.0
+trl>=0.15.0
 
 # Inference & Serving
-vllm>=0.4.0
+vllm>=0.14.1
 fastapi>=0.100.0
 uvicorn>=0.23.0
 pydantic>=2.0.0
 
 # RAG & Search (New for M3)
-sentence-transformers>=2.2.0
+sentence-transformers>=3.0.0
 faiss-cpu>=1.7.4
 
 # Data Processing

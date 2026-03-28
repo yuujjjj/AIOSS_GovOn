@@ -1,56 +1,24 @@
 """
 LoRA Adapter Merge Script
+
 Merges QLoRA adapter into the base EXAONE-Deep-7.8B model.
 Outputs a full-precision (BF16) merged model.
+
+Note: As of transformers 4.53.0+, auto_docstring, check_model_inputs,
+maybe_autocast, RopeParameters, use_kernel_forward_from_hub,
+use_kernel_func_from_hub, use_kernelized_func, and create_causal_mask
+all exist natively — no monkey-patches needed.
 """
 
-import os
-import sys
-import time
-import json
-import torch
-import transformers.utils.generic
-import transformers.modeling_rope_utils
-import transformers.integrations
-import transformers.masking_utils
-import transformers.utils.auto_docstring
-
-# Monkey-patching for EXAONE compatibility
-transformers.utils.auto_docstring.auto_docstring = lambda *args, **kwargs: (lambda obj: obj)
-if not hasattr(transformers.utils.generic, "check_model_inputs"):
-    transformers.utils.generic.check_model_inputs = lambda *args, **kwargs: (
-        args[1] if len(args) > 1 else kwargs.get("model_inputs")
-    )
-if not hasattr(transformers.utils.generic, "maybe_autocast"):
-    from contextlib import nullcontext
-
-    transformers.utils.generic.maybe_autocast = lambda *args, **kwargs: nullcontext()
-if not hasattr(transformers.modeling_rope_utils, "RopeParameters"):
-
-    class RopeParameters(dict):
-        pass
-
-    transformers.modeling_rope_utils.RopeParameters = RopeParameters
-if not hasattr(transformers.integrations, "use_kernel_forward_from_hub"):
-    transformers.integrations.use_kernel_forward_from_hub = lambda *args, **kwargs: (
-        lambda func: func
-    )
-if not hasattr(transformers.integrations, "use_kernel_func_from_hub"):
-    transformers.integrations.use_kernel_func_from_hub = lambda *args, **kwargs: (lambda func: func)
-if not hasattr(transformers.integrations, "use_kernelized_func"):
-    transformers.integrations.use_kernelized_func = lambda *args, **kwargs: (lambda func: func)
-if not hasattr(transformers.masking_utils, "create_causal_mask"):
-
-    def create_causal_mask(input_ids, *args, **kwargs):
-        from transformers.modeling_attn_mask_utils import _prepare_4d_causal_attention_mask
-
-        return _prepare_4d_causal_attention_mask(input_ids.shape, input_ids.dtype, input_ids.device)
-
-    transformers.masking_utils.create_causal_mask = create_causal_mask
-
-import wandb
 import gc
+import json
+import os
+import time
+
+import torch
+import wandb
 from datetime import datetime
+from loguru import logger
 
 # Paths
 BASE_MODEL_ID = "LGAI-EXAONE/EXAONE-Deep-7.8B"
@@ -75,24 +43,24 @@ def main():
         },
     )
 
-    print("=" * 60)
-    print("Stage 1: LoRA Adapter Merge")
-    print("=" * 60)
+    logger.info("=" * 60)
+    logger.info("Stage 1: LoRA Adapter Merge")
+    logger.info("=" * 60)
 
     # Step 1: Load adapter config for validation
-    print("\n[1/5] Validating adapter config...")
+    logger.info("[1/5] Validating adapter config...")
     from huggingface_hub import hf_hub_download
 
     config_path = hf_hub_download(ADAPTER_ID, "adapter_config.json")
     with open(config_path) as f:
         adapter_config = json.load(f)
 
-    print(f"  Base model: {adapter_config['base_model_name_or_path']}")
-    print(f"  PEFT type: {adapter_config['peft_type']}")
-    print(f"  Rank (r): {adapter_config['r']}")
-    print(f"  Alpha: {adapter_config['lora_alpha']}")
-    print(f"  Target modules: {adapter_config['target_modules']}")
-    print(f"  Dropout: {adapter_config['lora_dropout']}")
+    logger.info(f"  Base model: {adapter_config['base_model_name_or_path']}")
+    logger.info(f"  PEFT type: {adapter_config['peft_type']}")
+    logger.info(f"  Rank (r): {adapter_config['r']}")
+    logger.info(f"  Alpha: {adapter_config['lora_alpha']}")
+    logger.info(f"  Target modules: {adapter_config['target_modules']}")
+    logger.info(f"  Dropout: {adapter_config['lora_dropout']}")
 
     assert (
         adapter_config["base_model_name_or_path"] == BASE_MODEL_ID
@@ -100,18 +68,18 @@ def main():
     assert adapter_config["peft_type"] == "LORA", "Expected LORA adapter"
 
     wandb.log({"adapter_config": adapter_config})
-    print("  [OK] Adapter config validated")
+    logger.info("  [OK] Adapter config validated")
 
     # Step 2: Load tokenizer
-    print("\n[2/5] Loading tokenizer...")
+    logger.info("[2/5] Loading tokenizer...")
     from transformers import AutoTokenizer
 
     tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_ID, trust_remote_code=True)
-    print(f"  Vocab size: {tokenizer.vocab_size}")
-    print(f"  Model max length: {tokenizer.model_max_length}")
+    logger.info(f"  Vocab size: {tokenizer.vocab_size}")
+    logger.info(f"  Model max length: {tokenizer.model_max_length}")
 
     # Step 3: Load base model in BF16 for clean merging
-    print("\n[3/5] Loading base model in BF16...")
+    logger.info("[3/5] Loading base model in BF16...")
     from transformers import AutoModelForCausalLM
 
     mem_before = torch.cuda.memory_allocated() / 1024**3
@@ -122,23 +90,23 @@ def main():
         trust_remote_code=True,
     )
 
-    # Monkey-patch for EXAONE model compatibility (transformers 5.x)
+    # Verify EXAONE embedding accessors work natively; patch only if broken
     try:
         base_model.get_input_embeddings()
     except (NotImplementedError, AttributeError):
         base_model.get_input_embeddings = lambda: base_model.transformer.wte
-        print("  [PATCH] Monkey-patched get_input_embeddings")
+        logger.warning("Monkey-patched get_input_embeddings (model lacks native implementation)")
     try:
         base_model.get_output_embeddings()
     except (NotImplementedError, AttributeError):
         base_model.get_output_embeddings = lambda: base_model.lm_head
-        print("  [PATCH] Monkey-patched get_output_embeddings")
+        logger.warning("Monkey-patched get_output_embeddings (model lacks native implementation)")
 
     mem_after_base = torch.cuda.memory_allocated() / 1024**3
 
     base_param_count = sum(p.numel() for p in base_model.parameters())
-    print(f"  Base model parameters: {base_param_count:,}")
-    print(f"  GPU memory used: {mem_after_base:.2f} GB")
+    logger.info(f"  Base model parameters: {base_param_count:,}")
+    logger.info(f"  GPU memory used: {mem_after_base:.2f} GB")
 
     wandb.log(
         {
@@ -148,7 +116,7 @@ def main():
     )
 
     # Step 4: Load adapter and merge
-    print("\n[4/5] Loading LoRA adapter and merging...")
+    logger.info("[4/5] Loading LoRA adapter and merging...")
     from peft import PeftModel
 
     model = PeftModel.from_pretrained(base_model, ADAPTER_ID)
@@ -157,30 +125,30 @@ def main():
     # Count trainable (adapter) parameters
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     total_params = sum(p.numel() for p in model.parameters())
-    print(f"  Total params (with adapter): {total_params:,}")
-    print(f"  Trainable params (adapter): {trainable_params:,}")
-    print(f"  Trainable %: {100 * trainable_params / total_params:.4f}%")
-    print(f"  GPU memory (with adapter): {mem_after_adapter:.2f} GB")
+    logger.info(f"  Total params (with adapter): {total_params:,}")
+    logger.info(f"  Trainable params (adapter): {trainable_params:,}")
+    logger.info(f"  Trainable %: {100 * trainable_params / total_params:.4f}%")
+    logger.info(f"  GPU memory (with adapter): {mem_after_adapter:.2f} GB")
 
     # Merge and unload
-    print("\n  Merging adapter weights into base model...")
+    logger.info("  Merging adapter weights into base model...")
     model = model.merge_and_unload()
     mem_after_merge = torch.cuda.memory_allocated() / 1024**3
 
     merged_param_count = sum(p.numel() for p in model.parameters())
-    print(f"  Merged model parameters: {merged_param_count:,}")
-    print(f"  GPU memory after merge: {mem_after_merge:.2f} GB")
+    logger.info(f"  Merged model parameters: {merged_param_count:,}")
+    logger.info(f"  GPU memory after merge: {mem_after_merge:.2f} GB")
 
     # Validate: parameter count should match base model
     assert (
         merged_param_count == base_param_count
     ), f"Parameter count mismatch after merge: {merged_param_count} != {base_param_count}"
-    print("  [OK] Parameter count matches base model")
+    logger.info("  [OK] Parameter count matches base model")
 
     # Check no adapter modules remain
     has_lora = any("lora" in name.lower() for name, _ in model.named_parameters())
     assert not has_lora, "LoRA modules still present after merge!"
-    print("  [OK] No LoRA modules remaining")
+    logger.info("  [OK] No LoRA modules remaining")
 
     wandb.log(
         {
@@ -193,7 +161,7 @@ def main():
     )
 
     # Step 5: Save merged model
-    print(f"\n[5/5] Saving merged model to {MERGED_OUTPUT_DIR}...")
+    logger.info(f"[5/5] Saving merged model to {MERGED_OUTPUT_DIR}...")
     os.makedirs(MERGED_OUTPUT_DIR, exist_ok=True)
     model.save_pretrained(MERGED_OUTPUT_DIR, safe_serialization=True)
     tokenizer.save_pretrained(MERGED_OUTPUT_DIR)
@@ -205,10 +173,10 @@ def main():
         if f.endswith((".safetensors", ".bin"))
     )
     model_size_gb = total_size / 1024**3
-    print(f"  Model size on disk: {model_size_gb:.2f} GB")
+    logger.info(f"  Model size on disk: {model_size_gb:.2f} GB")
 
     # Sanity check: inference test
-    print("\n[Sanity Check] Running inference test...")
+    logger.info("[Sanity Check] Running inference test...")
     test_prompt = "다음 민원을 분류해주세요: 우리 동네 도로에 포트홀이 생겨서 위험합니다."
     messages = [{"role": "user", "content": test_prompt}]
     input_ids = tokenizer.apply_chat_template(
@@ -226,9 +194,9 @@ def main():
         )
 
     response = tokenizer.decode(output[0][input_ids.shape[1] :], skip_special_tokens=False)
-    print(f"  Input: {test_prompt}")
-    print(f"  Output (first 300 chars): {response[:300]}")
-    print("  [OK] Inference test passed")
+    logger.info(f"  Input: {test_prompt}")
+    logger.info(f"  Output (first 300 chars): {response[:300]}")
+    logger.info("  [OK] Inference test passed")
 
     wandb.log(
         {
@@ -239,10 +207,10 @@ def main():
     )
 
     elapsed = time.time() - start_time
-    print(f"\n{'=' * 60}")
-    print(f"Stage 1 Complete! Time: {elapsed:.1f}s ({elapsed/60:.1f}min)")
-    print(f"Merged model saved to: {MERGED_OUTPUT_DIR}")
-    print(f"{'=' * 60}")
+    logger.info("=" * 60)
+    logger.info(f"Stage 1 Complete! Time: {elapsed:.1f}s ({elapsed/60:.1f}min)")
+    logger.info(f"Merged model saved to: {MERGED_OUTPUT_DIR}")
+    logger.info("=" * 60)
 
     wandb.log({"merge_time_seconds": elapsed})
 
@@ -264,7 +232,7 @@ def main():
     log_path = os.path.join(MERGED_OUTPUT_DIR, "merge_log.json")
     with open(log_path, "w") as f:
         json.dump(merge_log, f, indent=2, ensure_ascii=False, default=str)
-    print(f"Merge log saved to: {log_path}")
+    logger.info(f"Merge log saved to: {log_path}")
 
     wandb.finish()
 

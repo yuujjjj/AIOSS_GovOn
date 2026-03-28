@@ -41,7 +41,6 @@ def main():
     print("Initializing Optimized vLLM Engine...")
     llm = LLM(
         model=MODEL_DIR,  # Use our patched local config
-        tokenizer=MODEL_DIR,
         trust_remote_code=True,
         max_model_len=4096,
         gpu_memory_utilization=0.75,
@@ -56,7 +55,10 @@ def main():
             test_data.append(json.loads(line))
     test_data = test_data[:20]
 
-    tokenizer = llm.get_tokenizer()
+    # vLLM 0.14.x: get_tokenizer() deprecated, load separately
+    from transformers import AutoTokenizer
+
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_DIR, trust_remote_code=True)
 
     # Phase 1 & 2: Benchmarking
     prompts = []

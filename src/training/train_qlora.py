@@ -187,7 +187,7 @@ def main():
         train_dataset=dataset["train"],
         eval_dataset=dataset["validation"],
         max_seq_length=args.max_seq_length,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         formatting_func=formatting_prompts_func,
         args=training_args,
     )

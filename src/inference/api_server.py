@@ -12,9 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.security import APIKeyHeader
 from loguru import logger
-from vllm.engine.arg_utils import AsyncEngineArgs
-from vllm.engine.async_llm_engine import AsyncLLMEngine
-from vllm.sampling_params import SamplingParams
+from vllm import AsyncLLM, SamplingParams
 
 from .agent_manager import AgentManager
 from .bm25_indexer import BM25Indexer
@@ -82,7 +80,7 @@ class vLLMEngineManager:
     """Manages the global AsyncLLMEngine and Retriever lifecycle for M3 Phase."""
 
     def __init__(self):
-        self.engine: AsyncLLMEngine = None
+        self.engine: AsyncLLM = None
         self.retriever: CivilComplaintRetriever = None
         self.index_manager = None
         self.agent_manager: AgentManager = None
@@ -94,7 +92,8 @@ class vLLMEngineManager:
 
     async def initialize(self):
         # 1. Initialize Optimized vLLM Engine
-        engine_args = AsyncEngineArgs(
+        logger.info(f"Initializing vLLM M3 engine with model: {MODEL_PATH}")
+        self.engine = AsyncLLM(
             model=MODEL_PATH,
             trust_remote_code=TRUST_REMOTE_CODE,
             gpu_memory_utilization=GPU_UTILIZATION,
@@ -102,8 +101,6 @@ class vLLMEngineManager:
             dtype="half",
             enforce_eager=True,  # More stable for patched EXAONE
         )
-        logger.info(f"Initializing vLLM M3 engine with model: {MODEL_PATH}")
-        self.engine = AsyncLLMEngine.from_engine_args(engine_args)
 
         # 2. Initialize RAG Retriever
         logger.info(f"Initializing RAG Retriever with index: {INDEX_PATH}")
@@ -238,9 +235,10 @@ class vLLMEngineManager:
             return user_block.strip()
         return prompt
 
-    async def generate(
+    def _prepare_generation(
         self, request: GenerateRequest, request_id: str, flags: "FeatureFlags | None" = None
     ) -> tuple:
+        """RAG 검색 및 프롬프트 구성을 수행하고 (augmented_prompt, sampling_params, retrieved_cases)를 반환한다."""
         # 1. RAG: Retrieve similar cases if enabled
         effective_flags = flags or self.feature_flags
         retrieved_cases = []
@@ -265,7 +263,7 @@ class vLLMEngineManager:
             if retrieved_cases:
                 augmented_prompt = self._augment_prompt(request.prompt, retrieved_cases)
 
-        # 3. vLLM Generation
+        # 3. Sampling parameters
         sampling_params = SamplingParams(
             temperature=request.temperature,
             top_p=request.top_p,
@@ -274,7 +272,27 @@ class vLLMEngineManager:
             repetition_penalty=1.1,  # Added for EXAONE stability
         )
 
-        return self.engine.generate(augmented_prompt, sampling_params, request_id), retrieved_cases
+        return augmented_prompt, sampling_params, retrieved_cases
+
+    async def generate(
+        self, request: GenerateRequest, request_id: str, flags: "FeatureFlags | None" = None
+    ) -> tuple:
+        """Non-streaming generation. Returns (RequestOutput, retrieved_cases)."""
+        augmented_prompt, sampling_params, retrieved_cases = self._prepare_generation(
+            request, request_id, flags
+        )
+        output = await self.engine.generate(augmented_prompt, sampling_params, request_id)
+        return output, retrieved_cases
+
+    async def generate_stream(
+        self, request: GenerateRequest, request_id: str, flags: "FeatureFlags | None" = None
+    ) -> tuple:
+        """Streaming generation. Returns (async_generator, retrieved_cases)."""
+        augmented_prompt, sampling_params, retrieved_cases = self._prepare_generation(
+            request, request_id, flags
+        )
+        stream = self.engine.stream(augmented_prompt, sampling_params, request_id)
+        return stream, retrieved_cases
 
 
 manager = vLLMEngineManager()
@@ -388,11 +406,7 @@ async def classify(
         max_tokens=classifier.max_tokens,
     )
 
-    results_generator = manager.engine.generate(classify_prompt, sampling_params, request_id)
-
-    final_output = None
-    async for request_output in results_generator:
-        final_output = request_output
+    final_output = await manager.engine.generate(classify_prompt, sampling_params, request_id)
 
     if final_output is None:
         raise HTTPException(status_code=500, detail="분류 처리에 실패했습니다.")
@@ -433,11 +447,7 @@ async def generate(
         raise HTTPException(status_code=400, detail="Use /v1/stream for streaming.")
 
     request_id = str(uuid.uuid4())
-    results_generator, retrieved_cases = await manager.generate(request, request_id, flags)
-
-    final_output = None
-    async for request_output in results_generator:
-        final_output = request_output
+    final_output, retrieved_cases = await manager.generate(request, request_id, flags)
 
     if final_output is None:
         raise HTTPException(status_code=500, detail="Generation failed.")
@@ -463,14 +473,14 @@ async def stream_generate(
         request.stream = True
 
     request_id = str(uuid.uuid4())
-    results_generator, retrieved_cases = await manager.generate(request, request_id, flags)
+    results_stream, retrieved_cases = await manager.generate_stream(request, request_id, flags)
 
     async def stream_results() -> AsyncGenerator[str, None]:
         cases_data = [RetrievedCase(**c).model_dump() for c in retrieved_cases]
 
-        async for request_output in results_generator:
+        async for request_output in results_stream:
             text = request_output.outputs[0].text
-            finished = request_output.finished
+            finished = request_output.is_finished
             if finished:
                 text = manager._strip_thought_blocks(text)
 
