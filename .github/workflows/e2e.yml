@@ -46,7 +46,7 @@ jobs:
             faiss-cpu sentence-transformers rank-bm25
 
       - name: Node.js 환경 설정
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '20'
 
