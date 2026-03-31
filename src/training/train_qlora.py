@@ -33,9 +33,9 @@ def parse_args():
         default="./models/checkpoints/exaone-civil-qlora",
         help="Output directory",
     )
-    parser.add_argument("--epochs", type=int, default=3)
-    parser.add_argument("--batch_size", type=int, default=4)
-    parser.add_argument("--grad_accum", type=int, default=4)
+    parser.add_argument("--epochs", type=int, default=1)
+    parser.add_argument("--batch_size", type=int, default=1)
+    parser.add_argument("--grad_accum", type=int, default=32)
     parser.add_argument("--lr", type=float, default=2e-4)
     parser.add_argument(
         "--peft_config_path",
@@ -45,7 +45,7 @@ def parse_args():
     )
     parser.add_argument("--lora_r", type=int, default=16)
     parser.add_argument("--lora_alpha", type=int, default=32)
-    parser.add_argument("--max_seq_length", type=int, default=2048)
+    parser.add_argument("--max_seq_length", type=int, default=1024)
     parser.add_argument("--wandb_project", type=str, default="exaone-civil-complaint")
     return parser.parse_args()
 
@@ -196,9 +196,27 @@ def main():
     trainer.train()
 
     # 8. 최종 저장
-    print(f"Saving model to {args.output_dir}/final")
-    trainer.save_model(os.path.join(args.output_dir, "final"))
-    tokenizer.save_pretrained(os.path.join(args.output_dir, "final"))
+    final_output_dir = os.path.join(args.output_dir, "final")
+    print(f"Saving model to {final_output_dir}")
+    trainer.save_model(final_output_dir)
+    tokenizer.save_pretrained(final_output_dir)
+    
+    # 9. Hugging Face Hub 업로드
+    if args.push_to_hub:
+        if not args.hub_model_id:
+            print("Error: --hub_model_id is required for push_to_hub")
+        else:
+            print(f"Pushing model to Hugging Face Hub: {args.hub_model_id}")
+            trainer.push_to_hub(
+                repo_id=args.hub_model_id,
+                token=args.hf_token,
+                commit_message=f"Fine-tuned EXAONE-Deep-7.8B at {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+            )
+            tokenizer.push_to_hub(
+                repo_id=args.hub_model_id,
+                token=args.hf_token
+            )
+    
     print("Training Complete!")
 
 
