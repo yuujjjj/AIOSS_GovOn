@@ -68,33 +68,49 @@ class PublicDocCollector:
     def process_item(self, item: Dict) -> List[Dict]:
         """수집된 데이터를 LLM 학습용 Instruction 포맷으로 변환한다."""
         results = []
-        doc_id = item.get("doc_id", "DOC")
+        doc_id = item.get("doc_id", item.get("id", "DOC"))
         title = item.get("doc_nm") or item.get("title") or "정부 공문서"
         
-        # 1. 요약/재구성 태스크 (Instruction Tuning용)
-        # MOIS 데이터셋의 '요약' 또는 '재구성' 필드를 활용
-        instruction = "다음 정부 공문서 내용을 바탕으로 핵심 내용을 요약하고 공공기관 보고서 형식(개조식)으로 재작성하세요."
+        # 1. 원문 및 요약 데이터 추출
         input_text = item.get("doc_cont") or item.get("content") or ""
         output_text = item.get("summary") or item.get("rewrite") or ""
         
+        # 만약 요약/재구성이 없으면 본문 자체를 활용한 태스크 생성 (Fallback)
+        if not output_text and input_text:
+            # 본문이 충분히 길 경우 간단한 요약 태스크로 활용 가능성이 있으나,
+            # 학습 품질을 위해 우선은 데이터가 있는 경우만 처리하되, 
+            # 필드명이 다를 가능성을 고려하여 더 넓게 탐색
+            for key in ["summaries", "content_summary", "description"]:
+                if item.get(key):
+                    output_text = item.get(key)
+                    break
+
         if input_text and output_text:
             results.append({
-                "instruction": instruction,
+                "instruction": "다음 정부 공문서 내용을 바탕으로 핵심 내용을 요약하고 공공기관 보고서 형식(개조식)으로 재작성하세요.",
                 "input": f"제목: {title}\n본문: {input_text}",
                 "output": output_text
             })
+        elif input_text:
+            # 요약본이 없더라도 본문이 있으면 '제목 생성' 태스크로 활용
+            results.append({
+                "instruction": "다음 공문서 본문을 읽고 적절한 제목을 추출하세요.",
+                "input": f"본문: {input_text}",
+                "output": title
+            })
 
         # 2. 질의응답 태스크
-        qa_list = item.get("qna_data", [])
-        for qa in qa_list:
-            q = qa.get("question", "")
-            a = qa.get("answer", "")
-            if q and a:
-                results.append({
-                    "instruction": f"제공된 공문서 '{title}'의 내용을 바탕으로 다음 질문에 답하세요.",
-                    "input": f"질문: {q}",
-                    "output": a
-                })
+        qa_list = item.get("qna_data", item.get("qa", []))
+        if isinstance(qa_list, list):
+            for qa in qa_list:
+                q = qa.get("question", qa.get("q", ""))
+                a = qa.get("answer", qa.get("a", ""))
+                if q and a:
+                    results.append({
+                        "instruction": f"제공된 공문서 '{title}'의 내용을 바탕으로 다음 질문에 답하세요.",
+                        "input": f"질문: {q}",
+                        "output": a
+                    })
 
         return results
 
