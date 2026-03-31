@@ -124,9 +124,9 @@ def main():
 
     # 실제 파일 경로에 맞춰 소스 리스트 정의
     sources = [
-        (IndexType.LAW, "data/raw/laws.jsonl"),
+        (IndexType.LAW, "data/raw/laws"),
         (IndexType.MANUAL, "data/raw/manuals"),
-        (IndexType.NOTICE, "data/raw/notices/alio_info.jsonl"), # 경로 수정됨
+        (IndexType.NOTICE, "data/raw/notices"), # 경로 수정됨
         (IndexType.CASE, "data/processed/v2_train.jsonl")
     ]
 
