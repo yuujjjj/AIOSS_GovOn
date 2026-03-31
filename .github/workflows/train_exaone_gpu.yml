@@ -110,4 +110,9 @@ jobs:
       - name: Upload Logs to W&B
         if: always()
         run: |
-          wandb sync --clean
+          if command -v wandb &> /dev/null; then
+            wandb sync --clean
+          else
+            echo "wandb command not found, skipping sync."
+          fi
+clean
