@@ -57,7 +57,7 @@ jobs:
         run: |
           uv run python scripts/collect_data/collect_manuals.py \
             --limit ${{ github.event.inputs.limit_manuals || '10' }} \
-            --output-dir data/raw/manuals
+            --output data/raw/manuals
 
       - name: Collect Notices
         env:
