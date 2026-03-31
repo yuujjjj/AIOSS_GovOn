@@ -49,18 +49,19 @@ jobs:
         with:
           python-version: "3.11"
           enable-cache: true
+- name: Install Dependencies
+  run: |
+    # 가상 환경 내에 의존성 설치 (system 플래그 제거)
+    uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+    uv pip install bitsandbytes accelerate peft trl transformers datasets wandb requests loguru
 
-      - name: Install Dependencies
-        run: |
-          uv pip install --system torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-          uv pip install --system bitsandbytes accelerate peft trl transformers datasets wandb requests loguru
 
       - name: Prepare Integrated Dataset (Civil + Public Doc)
         run: |
           mkdir -p data/final
-          python3 scripts/collect_data/collect_public_docs.py --limit 3000 --output data/raw/public_docs.jsonl
+          uv run python scripts/collect_data/collect_public_docs.py --limit 3000 --output data/raw/public_docs.jsonl
           TRAIN_CIVIL="data/processed/civil_complaint_train.jsonl"
-          python3 -c "
+          uv run python -c "
           import json, random, os
           combined = []
           try:
@@ -82,7 +83,7 @@ jobs:
 
       - name: Fine-tuning EXAONE-Deep-7.8B (QLoRA for T4)
         run: |
-          python3 src/training/train_qlora.py \
+          uv run python src/training/train_qlora.py \
             --model_id "LGAI-EXAONE/EXAONE-Deep-7.8B" \
             --train_path "data/final/train.jsonl" \
             --val_path "data/final/val.jsonl" \
