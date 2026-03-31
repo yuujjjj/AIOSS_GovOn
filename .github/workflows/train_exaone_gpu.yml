@@ -1,4 +1,4 @@
-name: "Train EXAONE-Deep-7.8B (T4 GPU)"
+name: "Train EXAONE-Deep-7.8B (T4 GPU) v3"
 
 on:
   workflow_dispatch:
@@ -49,12 +49,11 @@ jobs:
         with:
           python-version: "3.11"
           enable-cache: true
-- name: Install Dependencies
-  run: |
-    # 가상 환경 내에 의존성 설치 (system 플래그 제거)
-    uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-    uv pip install bitsandbytes accelerate peft trl transformers datasets wandb requests loguru
 
+      - name: Install Dependencies
+        run: |
+          uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+          uv pip install bitsandbytes accelerate peft trl transformers datasets wandb requests loguru
 
       - name: Prepare Integrated Dataset (Civil + Public Doc)
         run: |
@@ -100,5 +99,5 @@ jobs:
         if: always()
         run: |
           if command -v wandb &> /dev/null; then
-            wandb sync --clean
+            uv run wandb sync --clean
           fi
