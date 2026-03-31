@@ -1,4 +1,4 @@
-name: "Train EXAONE-Deep-7.8B on GPU"
+name: "Train EXAONE-Deep-7.8B (T4 GPU)"
 
 on:
   workflow_dispatch:
