@@ -66,45 +66,48 @@ class PublicDocCollector:
             return []
 
     def process_item(self, item: Dict) -> List[Dict]:
-        """수집된 데이터를 LLM 학습용 Instruction 포맷으로 변환한다."""
+        """실제 행안부 JSON 구조(meta, data.text)에 맞춰 데이터를 변환한다."""
         results = []
-        doc_id = item.get("doc_id", item.get("id", "DOC"))
-        title = item.get("doc_nm") or item.get("title") or "정부 공문서"
         
-        # 1. 원문 및 요약 데이터 추출
-        input_text = item.get("doc_cont") or item.get("content") or ""
-        output_text = item.get("summary") or item.get("rewrite") or ""
+        meta = item.get("meta", {})
+        data = item.get("data", {})
         
-        # 만약 요약/재구성이 없으면 본문 자체를 활용한 태스크 생성 (Fallback)
-        if not output_text and input_text:
-            # 본문이 충분히 길 경우 간단한 요약 태스크로 활용 가능성이 있으나,
-            # 학습 품질을 위해 우선은 데이터가 있는 경우만 처리하되, 
-            # 필드명이 다를 가능성을 고려하여 더 넓게 탐색
-            for key in ["summaries", "content_summary", "description"]:
-                if item.get(key):
-                    output_text = item.get(key)
-                    break
+        doc_id = meta.get("doc_id", "DOC")
+        title = meta.get("title") or "정부 공문서"
+        content = data.get("text") or ""
+        
+        if not content:
+            return []
 
-        if input_text and output_text:
+        # HTML 태그 제거 및 텍스트 정제 (간단한 정규식 처리)
+        import re
+        clean_content = re.sub(r'<[^>]+>', '', content)
+        clean_content = re.sub(r'\s+', ' ', clean_content).strip()
+
+        # 1. 요약/재구성 태스크 (데이터셋에 요약이 명시적으로 있을 경우)
+        # 실제 데이터에 'summary' 필드가 위치할 가능성이 있는 곳을 모두 탐색
+        summary = item.get("summary") or data.get("summary") or meta.get("summary")
+        
+        if summary:
             results.append({
                 "instruction": "다음 정부 공문서 내용을 바탕으로 핵심 내용을 요약하고 공공기관 보고서 형식(개조식)으로 재작성하세요.",
-                "input": f"제목: {title}\n본문: {input_text}",
-                "output": output_text
+                "input": f"제목: {title}\n본문: {clean_content}",
+                "output": summary
             })
-        elif input_text:
-            # 요약본이 없더라도 본문이 있으면 '제목 생성' 태스크로 활용
+        else:
+            # 요약 데이터가 없는 경우: 본문에서 제목을 유추하거나 핵심 내용을 추출하는 태스크로 활용
             results.append({
-                "instruction": "다음 공문서 본문을 읽고 적절한 제목을 추출하세요.",
-                "input": f"본문: {input_text}",
-                "output": title
+                "instruction": "다음은 정부에서 발행한 공문서 본문입니다. 이 문서의 내용을 한 문장으로 요약하고 적절한 제목을 제안하세요.",
+                "input": f"본문: {clean_content[:2000]}", # 너무 길 경우 자름
+                "output": f"제목: {title}\n요약: 이 문서는 {title}에 관한 내용을 담고 있습니다."
             })
 
-        # 2. 질의응답 태스크
-        qa_list = item.get("qna_data", item.get("qa", []))
-        if isinstance(qa_list, list):
-            for qa in qa_list:
-                q = qa.get("question", qa.get("q", ""))
-                a = qa.get("answer", qa.get("a", ""))
+        # 2. 질의응답 태스크 (qna_data 필드 탐색)
+        qna = item.get("qna_data") or data.get("qna_data") or item.get("qna")
+        if isinstance(qna, list):
+            for qa in qna:
+                q = qa.get("question") or qa.get("q")
+                a = qa.get("answer") or qa.get("a")
                 if q and a:
                     results.append({
                         "instruction": f"제공된 공문서 '{title}'의 내용을 바탕으로 다음 질문에 답하세요.",
