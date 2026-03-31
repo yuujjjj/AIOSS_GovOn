@@ -79,10 +79,18 @@ class PublicDocCollector:
         if not content:
             return []
 
-        # HTML 태그 제거 및 텍스트 정제 (간단한 정규식 처리)
+        # HTML 정제: 이미지는 제거하되, 표(table) 구조는 보존
         import re
-        clean_content = re.sub(r'<[^>]+>', '', content)
-        clean_content = re.sub(r'\s+', ' ', clean_content).strip()
+        # 1. 이미지 태그 및 관련 속성 제거
+        clean_content = re.sub(r'<img[^>]*>', '', content)
+        # 2. 기타 불필요한 태그 제거 (표 관련 태그는 제외)
+        # 보존할 태그: table, thead, tbody, tr, th, td
+        allowed_tags = ['table', 'thead', 'tbody', 'tr', 'th', 'td']
+        tag_pattern = re.compile(r'<(/?)(?!(' + '|'.join(allowed_tags) + r')\b)[^>]+>', re.IGNORECASE)
+        clean_content = tag_pattern.sub('', clean_content)
+        
+        # 3. 과도한 공백 정제 (줄바꿈은 어느 정도 유지하여 가독성 확보)
+        clean_content = re.sub(r'[ \t]+', ' ', clean_content).strip()
 
         # 1. 요약/재구성 태스크 (데이터셋에 요약이 명시적으로 있을 경우)
         # 실제 데이터에 'summary' 필드가 위치할 가능성이 있는 곳을 모두 탐색
