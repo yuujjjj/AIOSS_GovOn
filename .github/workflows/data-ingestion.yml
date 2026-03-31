@@ -43,33 +43,16 @@ jobs:
           mkdir -p models/faiss_index
           mkdir -p models/bm25_index
 
-      - name: Collect Laws
-        env:
-          LAW_GO_KR_OC: ${{ secrets.LAW_GO_KR_OC }}
+      - name: Use Pre-collected Data
         run: |
-          uv run python scripts/collect_data/collect_laws.py \
-            --limit ${{ github.event.inputs.limit_laws || '50' }} \
-            --output data/raw/laws.jsonl
-
-      - name: Collect Manuals
-        env:
-          DATA_GO_KR_API_KEY: ${{ secrets.DATA_GO_KR_API_KEY }}
-        run: |
-          uv run python scripts/collect_data/collect_manuals.py \
-            --limit ${{ github.event.inputs.limit_manuals || '10' }} \
-            --output data/raw/manuals
-
-      - name: Collect Notices
-        env:
-          DATA_GO_KR_API_KEY: ${{ secrets.DATA_GO_KR_API_KEY }}
-        run: |
-          uv run python scripts/collect_data/collect_notices.py \
-            --limit ${{ github.event.inputs.limit_notices || '20' }} \
-            --output data/raw/notices.jsonl
+          echo "Using LBox precedent data (1,000 records) and ALIO info (100 records) already in repository."
+          ls -lh data/raw/laws.jsonl
+          ls -lh data/raw/notices/alio_info.jsonl
 
       - name: Build Multi-Index (FAISS + BM25)
         run: |
           uv run python scripts/build_multi_index.py \
+            --model-name intfloat/multilingual-e5-large \
             --index-dir models/faiss_index \
             --bm25-dir models/bm25_index
 
