@@ -1,0 +1,102 @@
+# Data Ingestion Workflow for GovOn
+#
+# 이 워크플로우는 실제 외부 API를 통해 법령, 매뉴얼, 공시정보를 수집하고
+# RAG 검색용 다중 인덱스(FAISS + BM25)를 구축합니다.
+#
+# Secrets:
+#   - LAW_GO_KR_OC: 국가법령정보센터 부처코드
+#   - DATA_GO_KR_API_KEY: 공공데이터포털 인증키
+
+name: Data Ingestion
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'  # 매주 일요일 자정 (UTC)
+  workflow_dispatch:      # 수동 실행 허용
+    inputs:
+      limit_laws:
+        description: '수집할 법령 수'
+        required: true
+        default: '50'
+      limit_manuals:
+        description: '수집할 매뉴얼 수'
+        required: true
+        default: '10'
+      limit_notices:
+        description: '수집할 공시정보 수'
+        required: true
+        default: '20'
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Python with uv
+        uses: ./.github/actions/setup-python-uv
+
+      - name: Create data directories
+        run: |
+          mkdir -p data/raw/manuals
+          mkdir -p data/raw/notices
+          mkdir -p models/faiss_index
+          mkdir -p models/bm25_index
+
+      - name: Collect Laws
+        env:
+          LAW_GO_KR_OC: ${{ secrets.LAW_GO_KR_OC }}
+        run: |
+          uv run python scripts/collect_data/collect_laws.py \
+            --limit ${{ github.event.inputs.limit_laws || '50' }} \
+            --output data/raw/laws.jsonl
+
+      - name: Collect Manuals
+        env:
+          DATA_GO_KR_API_KEY: ${{ secrets.DATA_GO_KR_API_KEY }}
+        run: |
+          uv run python scripts/collect_data/collect_manuals.py \
+            --limit ${{ github.event.inputs.limit_manuals || '10' }} \
+            --output-dir data/raw/manuals
+
+      - name: Collect Notices
+        env:
+          DATA_GO_KR_API_KEY: ${{ secrets.DATA_GO_KR_API_KEY }}
+        run: |
+          uv run python scripts/collect_data/collect_notices.py \
+            --limit ${{ github.event.inputs.limit_notices || '20' }} \
+            --output data/raw/notices.jsonl
+
+      - name: Build Multi-Index (FAISS + BM25)
+        run: |
+          uv run python scripts/build_multi_index.py \
+            --index-dir models/faiss_index \
+            --bm25-dir models/bm25_index
+
+      - name: Upload Ingested Data Artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: raw-data
+          path: data/raw/
+          retention-days: 7
+
+      - name: Upload Search Indices Artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: search-indices
+          path: |
+            models/faiss_index/
+            models/bm25_index/
+          retention-days: 30
+
+      - name: Ingestion Summary
+        run: |
+          echo "### 📊 Ingestion Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Data Type | Status | Path |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Laws | ✅ Collected | data/raw/laws.jsonl |" >> $GITHUB_STEP_SUMMARY
+          echo "| Manuals | ✅ Downloaded | data/raw/manuals/ |" >> $GITHUB_STEP_SUMMARY
+          echo "| Notices | ✅ Collected | data/raw/notices.jsonl |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔍 Built Indices" >> $GITHUB_STEP_SUMMARY
+          ls -R models/ >> $GITHUB_STEP_SUMMARY

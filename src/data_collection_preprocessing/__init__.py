@@ -17,5 +17,4 @@ from .config import Config
 from .pii_masking import PIIMasker
 from .data_preprocessor import DataPreprocessor
 from .aihub_collector import AIHubCollector
-from .seoul_api_collector import SeoulAPICollector
 from .calibration_dataset import CalibrationDatasetGenerator

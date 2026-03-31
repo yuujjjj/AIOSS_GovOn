@@ -1,0 +1,59 @@
+# Data Ingestion and Indexing Workflow for GovOn
+#
+# 이 워크플로우는 실제 수집된 데이터(LBox 판례, ALIO 공시 등)를 바탕으로
+# RAG 검색용 다중 인덱스(FAISS + BM25)를 GitHub 서버에서 직접 빌드합니다.
+
+name: Data Indexing Validation
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'scripts/**'
+      - 'data/raw/**'
+  workflow_dispatch:      # 수동 실행 허용
+
+jobs:
+  build-indices:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Python with uv
+        uses: ./.github/actions/setup-python-uv
+
+      - name: Install Build Dependencies
+        run: |
+          uv pip install sentence-transformers faiss-cpu rank_bm25 requests loguru beautifulsoup4
+
+      - name: Create Directories
+        run: |
+          mkdir -p models/faiss_index
+          mkdir -p models/bm25_index
+          mkdir -p data/raw/notices
+          mkdir -p data/raw/manuals
+
+      - name: Run Multi-Index Build
+        # CPU 환경이므로 임베딩 모델 로드 및 연산에 약 5-10분 소요될 수 있음
+        run: |
+          uv run python scripts/build_multi_index.py \
+            --model-name intfloat/multilingual-e5-large \
+            --index-dir models/faiss_index \
+            --bm25-dir models/bm25_index
+
+      - name: Verify Generated Indices
+        run: |
+          echo "### 🔍 Generated Index Files" >> $GITHUB_STEP_SUMMARY
+          echo "#### FAISS Indices" >> $GITHUB_STEP_SUMMARY
+          ls -lh models/faiss_index/ >> $GITHUB_STEP_SUMMARY
+          echo "#### BM25 Indices" >> $GITHUB_STEP_SUMMARY
+          ls -lh models/bm25_index/ >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload Search Indices
+        uses: actions/upload-artifact@v7
+        with:
+          name: govon-search-indices
+          path: |
+            models/faiss_index/
+            models/bm25_index/
+          retention-days: 14
