@@ -5,7 +5,7 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import AsyncGenerator, List, Optional
+from typing import Any, AsyncGenerator, List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Security
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,6 +27,7 @@ except ImportError:
 # RuntimeConfig 로드 전 조기 참조용 (import 순서 의존성)
 SKIP_MODEL_LOAD = os.getenv("SKIP_MODEL_LOAD", "false").lower() in ("true", "1", "yes")
 
+from .agent_loop import AgentLoop, AgentTrace, ToolResult
 from .agent_manager import AgentManager
 from .bm25_indexer import BM25Indexer
 from .feature_flags import FeatureFlags
@@ -35,6 +36,9 @@ from .index_manager import IndexType, MultiIndexManager
 from .retriever import CivilComplaintRetriever
 from .runtime_config import RuntimeConfig, ServingProfile
 from .schemas import (
+    AgentRunRequest,
+    AgentRunResponse,
+    AgentTraceSchema,
     ClassificationResult,
     ClassifyRequest,
     ClassifyResponse,
@@ -45,7 +49,10 @@ from .schemas import (
     SearchResponse,
     SearchResult,
     StreamResponse,
+    ToolResultSchema,
 )
+from .session_context import SessionStore
+from .tool_router import ToolType
 
 if not SKIP_MODEL_LOAD:
     try:
@@ -118,6 +125,8 @@ class vLLMEngineManager:
         self.embed_model = None
         self.feature_flags: FeatureFlags = FeatureFlags.from_env()
         self.pii_masker = None
+        self.session_store: SessionStore = SessionStore()
+        self.agent_loop: Optional[AgentLoop] = None
 
     async def initialize(self):
         if SKIP_MODEL_LOAD:
@@ -220,6 +229,10 @@ class vLLMEngineManager:
         except Exception as e:
             logger.warning(f"PIIMasker 초기화 실패 — 검색 결과 PII 마스킹이 비활성화됩니다: {e}")
             self.pii_masker = None
+
+        # 7. Initialize Agent Loop (세션 기반 에이전트 루프)
+        self._init_agent_loop()
+        logger.info("AgentLoop 초기화 완료")
 
     def _escape_special_tokens(self, text: str) -> str:
         """Escape EXAONE chat template tokens to prevent prompt injection."""
@@ -342,6 +355,159 @@ class vLLMEngineManager:
         )
         output = await self._run_engine(augmented_prompt, sampling_params, request_id)
         return output, retrieved_cases
+
+    def _init_agent_loop(self) -> None:
+        """에이전트 루프에 사용할 tool 어댑터를 등록하고 AgentLoop를 생성한다."""
+        engine_ref = self  # 클로저에서 참조
+
+        async def _classify_tool(query: str, context: dict, session: Any) -> dict:
+            """classify tool 어댑터."""
+            if not engine_ref.agent_manager or not engine_ref.agent_manager.get_agent("classifier"):
+                return {"classification": None, "error": "분류 에이전트 미로드"}
+
+            classifier = engine_ref.agent_manager.get_agent("classifier")
+            safe_prompt = engine_ref._escape_special_tokens(query)
+            classify_prompt = engine_ref.agent_manager.build_prompt("classifier", safe_prompt)
+
+            request_id = str(uuid.uuid4())
+            sampling_params = SamplingParams(
+                temperature=classifier.temperature,
+                top_p=0.9,
+                max_tokens=classifier.max_tokens,
+            )
+
+            final_output = await engine_ref._run_engine(
+                classify_prompt, sampling_params, request_id
+            )
+            if final_output is None:
+                return {"classification": None, "error": "분류 처리 실패"}
+
+            response_text = final_output.outputs[0].text
+            try:
+                json_match = re.search(r"\{.*?\}", response_text, re.DOTALL)
+                if json_match:
+                    cls_result = ClassificationResult.model_validate_json(json_match.group())
+                    return {
+                        "classification": cls_result.model_dump(),
+                        "raw_text": response_text,
+                    }
+                return {"classification": None, "error": "JSON 파싱 실패"}
+            except Exception as e:
+                return {"classification": None, "error": f"분류 결과 검증 실패: {e}"}
+
+        async def _search_tool(query: str, context: dict, session: Any) -> dict:
+            """search tool 어댑터."""
+            # 분류 결과가 있으면 쿼리에 카테고리 힌트를 추가
+            classify_data = context.get("classify", {})
+            search_query = query
+            if classify_data.get("classification"):
+                category = classify_data["classification"].get("category", "")
+                if category:
+                    search_query = f"[{category}] {query}"
+
+            if engine_ref.hybrid_engine:
+                results_raw, actual_mode = await engine_ref.hybrid_engine.search(
+                    query=search_query,
+                    index_type=IndexType.CASE,
+                    top_k=5,
+                    mode=SearchMode.HYBRID,
+                )
+                results = [
+                    {
+                        "doc_id": r.get("doc_id", ""),
+                        "title": r.get("title", ""),
+                        "content": _extract_content_by_type(r, IndexType.CASE),
+                        "score": r.get("score", 0.0),
+                        "metadata": r.get("extras", {}),
+                    }
+                    for r in results_raw
+                ]
+                return {"results": results, "search_mode": actual_mode.value}
+            elif engine_ref.retriever:
+                raw_results = engine_ref.retriever.search(search_query, top_k=5)
+                results = [
+                    {
+                        "doc_id": r.get("id", ""),
+                        "title": r.get("category", ""),
+                        "content": r.get("complaint", "") + "\n" + r.get("answer", ""),
+                        "score": r.get("score", 0.0),
+                        "complaint": r.get("complaint", ""),
+                        "answer": r.get("answer", ""),
+                    }
+                    for r in raw_results
+                ]
+                return {"results": results, "search_mode": "dense"}
+            return {"results": [], "error": "검색 엔진 미초기화"}
+
+        async def _generate_tool(query: str, context: dict, session: Any) -> dict:
+            """generate tool 어댑터."""
+            # 검색 결과에서 RAG 케이스 추출
+            search_data = context.get("search", {})
+            retrieved_cases = []
+            if search_data.get("results"):
+                for r in search_data["results"][:3]:
+                    retrieved_cases.append(
+                        {
+                            "complaint": r.get("content", r.get("complaint", "")),
+                            "answer": r.get("answer", r.get("content", "")),
+                        }
+                    )
+
+            # 세션 컨텍스트 포함
+            session_summary = context.get("session_context", "")
+            augmented_query = query
+            if session_summary:
+                augmented_query = f"{session_summary}\n\n현재 요청: {query}"
+
+            gen_request = GenerateRequest(
+                prompt=augmented_query,
+                max_tokens=512,
+                temperature=0.7,
+                use_rag=False,  # 이미 검색 결과를 직접 주입
+            )
+
+            request_id = str(uuid.uuid4())
+
+            # RAG 컨텍스트를 직접 구성
+            if engine_ref.agent_manager and engine_ref.agent_manager.get_agent("generator"):
+                safe_message = engine_ref._escape_special_tokens(augmented_query)
+                if retrieved_cases:
+                    rag_context = engine_ref._build_rag_context(retrieved_cases)
+                    safe_message = (
+                        f"{rag_context}"
+                        f"위 참고 사례를 바탕으로 다음 민원에 대해 답변해 주세요.\n\n"
+                        f"{safe_message}"
+                    )
+                prompt = engine_ref.agent_manager.build_prompt("generator", safe_message)
+            else:
+                prompt = augmented_query
+                if retrieved_cases:
+                    prompt = engine_ref._augment_prompt(augmented_query, retrieved_cases)
+
+            sampling_params = SamplingParams(
+                temperature=gen_request.temperature,
+                top_p=0.9,
+                max_tokens=gen_request.max_tokens,
+                repetition_penalty=1.1,
+            )
+
+            final_output = await engine_ref._run_engine(prompt, sampling_params, request_id)
+            if final_output is None:
+                return {"text": "", "error": "생성 실패"}
+
+            text = engine_ref._strip_thought_blocks(final_output.outputs[0].text)
+            return {
+                "text": text,
+                "prompt_tokens": len(final_output.prompt_token_ids),
+                "completion_tokens": len(final_output.outputs[0].token_ids),
+            }
+
+        tool_registry = {
+            ToolType.CLASSIFY: _classify_tool,
+            ToolType.SEARCH: _search_tool,
+            ToolType.GENERATE: _generate_tool,
+        }
+        self.agent_loop = AgentLoop(tool_registry=tool_registry)
 
     async def generate_stream(
         self, request: GenerateRequest, request_id: str, flags: "FeatureFlags | None" = None
@@ -677,6 +843,111 @@ async def search(request: SearchRequest, req: Request, _: None = Depends(verify_
         # C-3: 내부 예외 정보 노출 방지
         logger.error(f"검색 중 오류 발생: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="검색 처리 중 내부 오류가 발생했습니다.")
+
+
+# --- Agent Loop 엔드포인트 (#393) ---
+
+
+def _trace_to_schema(trace: AgentTrace) -> AgentTraceSchema:
+    """AgentTrace를 Pydantic 스키마로 변환한다."""
+    return AgentTraceSchema(
+        request_id=trace.request_id,
+        session_id=trace.session_id,
+        plan=trace.plan.tool_names if trace.plan else [],
+        plan_reason=trace.plan.reason if trace.plan else "",
+        tool_results=[
+            ToolResultSchema(
+                tool=r.tool.value,
+                success=r.success,
+                latency_ms=round(r.latency_ms, 2),
+                data=r.data,
+                error=r.error,
+            )
+            for r in trace.tool_results
+        ],
+        total_latency_ms=round(trace.total_latency_ms, 2),
+        error=trace.error,
+    )
+
+
+@app.post("/v1/agent/run", response_model=AgentRunResponse)
+@_rate_limit("30/minute")
+async def agent_run(
+    request: AgentRunRequest,
+    _: None = Depends(verify_api_key),
+):
+    """세션 기반 에이전트 루프 실행 엔드포인트.
+
+    하나의 요청에서 classify -> search -> generate 흐름을 통합 실행한다.
+    스트리밍이 필요하면 /v1/agent/stream을 사용한다.
+    """
+    if not manager.agent_loop:
+        raise HTTPException(status_code=503, detail="에이전트 루프가 초기화되지 않았습니다.")
+
+    if request.stream:
+        raise HTTPException(
+            status_code=400,
+            detail="스트리밍은 /v1/agent/stream 엔드포인트를 사용하세요.",
+        )
+
+    session = manager.session_store.get_or_create(session_id=request.session_id)
+    request_id = str(uuid.uuid4())
+
+    trace = await manager.agent_loop.run(
+        query=request.query,
+        session=session,
+        request_id=request_id,
+        force_tools=request.force_tools,
+    )
+
+    if trace.error:
+        logger.error(f"에이전트 루프 오류 (request_id={request_id}): {trace.error}")
+
+    # 분류 결과 추출
+    classification = None
+    search_results = None
+    for result in trace.tool_results:
+        if result.tool == ToolType.CLASSIFY and result.success:
+            classification = result.data.get("classification")
+        if result.tool == ToolType.SEARCH and result.success:
+            search_results = result.data.get("results")
+
+    return AgentRunResponse(
+        request_id=request_id,
+        session_id=session.session_id,
+        text=trace.final_text,
+        trace=_trace_to_schema(trace),
+        classification=classification,
+        search_results=search_results,
+    )
+
+
+@app.post("/v1/agent/stream")
+@_rate_limit("30/minute")
+async def agent_stream(
+    request: AgentRunRequest,
+    _: None = Depends(verify_api_key),
+):
+    """세션 기반 에이전트 루프 스트리밍 엔드포인트.
+
+    각 단계의 진행 상황과 최종 결과를 SSE 이벤트로 전달한다.
+    """
+    if not manager.agent_loop:
+        raise HTTPException(status_code=503, detail="에이전트 루프가 초기화되지 않았습니다.")
+
+    session = manager.session_store.get_or_create(session_id=request.session_id)
+    request_id = str(uuid.uuid4())
+
+    async def stream_events() -> AsyncGenerator[str, None]:
+        async for event in manager.agent_loop.run_stream(
+            query=request.query,
+            session=session,
+            request_id=request_id,
+            force_tools=request.force_tools,
+        ):
+            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(stream_events(), media_type="text/event-stream")
 
 
 if __name__ == "__main__":
