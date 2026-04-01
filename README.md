@@ -6,8 +6,47 @@
 [![W&B Projects](https://img.shields.io/badge/W%26B_Projects-All_Experiments-FFBE00?logo=weightsandbiases)](https://wandb.ai/umyun3/projects)
 [![W&B Reports](https://img.shields.io/badge/W%26B_Reports-Analysis-EE6C4D?logo=weightsandbiases)](https://wandb.ai/umyun3/reports)
 [![Docs Portal](https://img.shields.io/badge/Docs-Portal-blue?logo=readthedocs)](https://govon-org.github.io/GovOn/)
+[![Public Roadmap](https://img.shields.io/badge/📍_Public_Roadmap-Initiatives-7C3AED)](https://github.com/GovOn-Org/GovOn/issues?q=label%3A%22🎯+Initiative%22+sort%3Aupdated-desc)
 
 EXAONE-Deep-7.8B 모델을 QLoRA 파인튜닝 및 AWQ 양자화하여, 폐쇄망 환경에서 클라우드 없이 민원을 분석하고 처리하는 온디바이스 AI 시스템이다.
+
+---
+
+## 📍 Public Roadmap
+
+GovOn의 개발 방향을 공개적으로 공유합니다. **[🎯 모든 Initiative 보기](https://github.com/GovOn-Org/GovOn/issues?q=label%3A%22🎯+Initiative%22+sort%3Aupdated-desc)**
+
+### 🎬 Milestone 3: 고도화 및 최적화 (마감: 2026-05-22)
+
+| # | Initiative | 상태 | 설명 |
+|---|-----------|------|------|
+| I-1 | [AI 모델 고도화](https://github.com/GovOn-Org/GovOn/issues/366) | 🎨 In Design | 공문서 파인튜닝 + KR-ELECTRA 분류기 |
+| I-2 | [AI 오케스트레이터 아키텍처](https://github.com/GovOn-Org/GovOn/issues/367) | 🎨 In Design | LLM Tool Call 파싱 + 오케스트레이터 메인 루프 |
+| I-3 | [Tool 통합](https://github.com/GovOn-Org/GovOn/issues/368) | 🎨 In Design | 민원분석 API + FAISS RAG + 공문서 검색/생성 Tool |
+| I-4 | [프론트엔드 Chat UI](https://github.com/GovOn-Org/GovOn/issues/369) | 🎨 In Design | Tool 실행 UI + HTML 공문서 렌더링 |
+| I-5 | [UI/UX 디자인 시스템](https://github.com/GovOn-Org/GovOn/issues/370) | 🛠️ In Progress | 와이어프레임 → 프로토타입 |
+| I-6 | [웹 UI 구축](https://github.com/GovOn-Org/GovOn/issues/371) | 🛠️ In Progress | Figma MCP + 컴포넌트 라이브러리 |
+| I-7 | [인프라 및 배포](https://github.com/GovOn-Org/GovOn/issues/372) | 🛠️ In Progress | Docker 컨테이너화 + 폐쇄망 배포 |
+
+### 📋 Milestone 4: 테스트 및 문서화 (마감: 2026-06-19)
+
+| # | Initiative | 상태 | 설명 |
+|---|-----------|------|------|
+| I-8 | [테스트 및 품질 보증](https://github.com/GovOn-Org/GovOn/issues/373) | 🎨 In Design | E2E 오케스트레이터 테스트 + 품질 평가 |
+| I-9 | [프로젝트 문서화 및 마무리](https://github.com/GovOn-Org/GovOn/issues/374) | 🎨 In Design | 사용자 매뉴얼 + 최종 회고 |
+
+### 🏁 Milestone 5: AIOSS CI/CD 및 품질 고도화 (마감: 2026-06-19)
+
+| # | Initiative | 상태 | 설명 |
+|---|-----------|------|------|
+| I-10 | [AIOSS 최종 납품](https://github.com/GovOn-Org/GovOn/issues/375) | 🛠️ In Progress | 캡스톤 AI OSS 프로젝트 최종 납품 |
+
+### 범례
+- 🎨 **In Design** — 설계/기획 단계
+- 🛠️ **In Progress** — 진행 중
+- 🚀 **Launched** — 완료
+
+---
 
 ## 핵심 기능
 
