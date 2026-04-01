@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from src.inference.hybrid_search import SearchMode
 from src.inference.index_manager import DocumentMetadata, IndexType
+from src.inference.tool_router import ToolType
 
 
 class RetrievedCase(BaseModel):
@@ -202,6 +203,62 @@ def from_internal_metadata(
         reliability_score=meta.reliability_score,
         metadata=meta.extras if meta.extras else {},
     )
+
+
+# ---------------------------------------------------------------------------
+# 에이전트 루프 스키마 (이슈 #393)
+# ---------------------------------------------------------------------------
+
+
+class AgentRunRequest(BaseModel):
+    """에이전트 루프 실행 요청 모델."""
+
+    query: str = Field(..., min_length=1, max_length=10000, description="사용자 요청 텍스트")
+    session_id: Optional[str] = Field(
+        default=None,
+        description="세션 ID. 미지정 시 새 세션을 생성한다.",
+    )
+    stream: bool = Field(default=False, description="스트리밍 응답 여부")
+    force_tools: Optional[List[ToolType]] = Field(
+        default=None,
+        description="강제 실행할 tool 목록. 미지정 시 자동 판단한다.",
+    )
+    max_tokens: int = Field(default=512, gt=0, le=4096, description="생성 단계 최대 토큰 수")
+    temperature: float = Field(default=0.7, ge=0.0, le=2.0, description="생성 단계 샘플링 온도")
+    use_rag: bool = Field(default=True, description="RAG 검색 사용 여부")
+
+
+class ToolResultSchema(BaseModel):
+    """단일 tool 실행 결과 스키마."""
+
+    tool: str
+    success: bool
+    latency_ms: float
+    data: Dict[str, Any] = Field(default_factory=dict)
+    error: Optional[str] = None
+
+
+class AgentTraceSchema(BaseModel):
+    """에이전트 루프 실행 트레이스 스키마."""
+
+    request_id: str
+    session_id: str
+    plan: List[str] = Field(default_factory=list)
+    plan_reason: str = ""
+    tool_results: List[ToolResultSchema] = Field(default_factory=list)
+    total_latency_ms: float = 0.0
+    error: Optional[str] = None
+
+
+class AgentRunResponse(BaseModel):
+    """에이전트 루프 실행 응답 모델."""
+
+    request_id: str
+    session_id: str
+    text: str
+    trace: AgentTraceSchema
+    classification: Optional[Dict[str, Any]] = None
+    search_results: Optional[List[Dict[str, Any]]] = None
 
 
 # forward-ref 해소
