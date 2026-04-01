@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+  workflow_dispatch:
 
 concurrency:
   group: docker-publish-${{ github.ref }}
@@ -77,6 +78,17 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: '1'
           format: table
+
+      - name: Publish summary
+        run: |
+          echo "### Docker Publish" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Event | ${{ github.event_name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Ref | ${{ github.ref_name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Image | ${{ steps.image-ref.outputs.image_tag }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Next Step | Use \\`image_tag=sha-${{ steps.short-sha.outputs.sha }}\\` when manually dispatching Deploy to Cloud Run. |" >> $GITHUB_STEP_SUMMARY
 
   smoke-test:
     needs: [build-and-push]
