@@ -1,7 +1,7 @@
 # GovOn Release Refactor: Shell-First First Release
 
-**Updated**: 2026-04-01  
-**Status**: Active  
+**Updated**: 2026-04-01
+**Status**: Active
 **Decision**: 첫 릴리즈는 `터미널 설치 + shell/bash 대화형 에이전트 + graph-based 의사결정 프레임워크`를 기준으로 재정의한다.
 
 ## Release Goal
@@ -130,7 +130,7 @@
 
 ### Workstream A: Runtime Hardening for Shell Release
 
-**Primary Issues**: `#367`, `#368`, `#129`  
+**Primary Issues**: `#367`, `#368`, `#129`
 **Goal**: 현재 있는 FastAPI + 검색 + 생성 기능을 shell client가 안정적으로 사용할 수 있는 런타임으로 정리
 
 #### A.1 API contract 고정
@@ -159,7 +159,7 @@
 
 ### Workstream B: Agentic Decision Framework
 
-**Primary Issues**: `#406`, `#407`, `#409`, `#410`, `#415`, `#416`, `#417`, `#418`  
+**Primary Issues**: `#406`, `#407`, `#409`, `#410`, `#415`, `#416`, `#417`, `#418`
 **Goal**: LLM이 무작정 tool을 호출하지 않도록 stateful graph와 명시적 guardrail을 갖춘 agentic runtime을 첫 릴리즈에 포함
 
 #### B.1 Graph runtime and state schema
@@ -195,7 +195,7 @@
 
 ### Workstream C: Interactive GovOn Shell
 
-**Primary Issues**: `#369` partial, `#132` partial, `#144` partial  
+**Primary Issues**: `#369` partial, `#132` partial, `#144` partial
 **Goal**: `govon` 명령으로 진입하는 대화형 셸 제공
 
 #### B.1 `govon` 엔트리포인트 추가
@@ -237,7 +237,7 @@
 
 ### Workstream D: Packaging, Install, Offline Delivery
 
-**Primary Issues**: `#372`, `#404`, `#405`, `#375`  
+**Primary Issues**: `#372`, `#404`, `#405`, `#375`
 **Goal**: shell-first 제품을 실제 설치/배포 가능한 형태로 출하
 
 #### C.1 Python package 배포 정리
@@ -268,7 +268,7 @@
 
 ### Workstream E: Release QA, Docs, Acceptance
 
-**Primary Issues**: `#373`, `#374`, `#375`, `#400`, `#60`, `#61`, `#59`  
+**Primary Issues**: `#373`, `#374`, `#375`, `#400`, `#60`, `#61`, `#59`
 **Goal**: shell-first 릴리즈를 실제 납품 가능한 상태로 검증
 
 #### D.1 Shell E2E 테스트
