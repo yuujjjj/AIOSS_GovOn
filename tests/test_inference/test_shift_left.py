@@ -53,7 +53,10 @@ with patch("src.inference.vllm_stabilizer.apply_transformers_patch"):
 
 from fastapi.testclient import TestClient
 
+from src.inference.agent_loop import AgentTrace, ToolResult
 from src.inference.index_manager import IndexType, MultiIndexManager
+from src.inference.session_context import SessionContext
+from src.inference.tool_router import ExecutionPlan, ToolStep, ToolType
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -1074,6 +1077,154 @@ class TestSearchShiftLeft:
         assert resp.status_code == 422
 
 
+# ===========================================================================
+# POST /v1/agent/* - 세션 기반 에이전트 루프 계약 검증
+# ===========================================================================
+
+
+@pytest.fixture
+def client_with_agent_loop(client):
+    """agent_loop와 session_store가 설정된 상태의 TestClient."""
+    original_agent_loop = getattr(manager, "agent_loop", None)
+    original_session_store = getattr(manager, "session_store", None)
+
+    session = SessionContext(session_id="session-agent-001")
+    manager.session_store = MagicMock()
+    manager.session_store.get_or_create.return_value = session
+    manager.agent_loop = MagicMock()
+
+    yield client, session
+
+    manager.agent_loop = original_agent_loop
+    manager.session_store = original_session_store
+
+
+class TestAgentLoopShiftLeft:
+    """POST /v1/agent/run, /v1/agent/stream 계약 검증."""
+
+    def test_agent_run_returns_trace_payload(self, client_with_agent_loop):
+        """agent/run이 세션, trace, 분류/검색 결과를 함께 반환한다."""
+        client, session = client_with_agent_loop
+
+        trace = AgentTrace(
+            request_id="req-agent-001",
+            session_id=session.session_id,
+            plan=ExecutionPlan(
+                steps=[
+                    ToolStep(tool=ToolType.CLASSIFY),
+                    ToolStep(tool=ToolType.SEARCH, depends_on="classify"),
+                    ToolStep(tool=ToolType.GENERATE, depends_on="search"),
+                ],
+                reason="민원 본문이므로 전체 파이프라인 실행",
+            ),
+            tool_results=[
+                ToolResult(
+                    tool=ToolType.CLASSIFY,
+                    success=True,
+                    data={
+                        "classification": {
+                            "category": "traffic",
+                            "confidence": 0.94,
+                            "reason": "도로 파손 관련 민원",
+                        }
+                    },
+                    latency_ms=8.4,
+                ),
+                ToolResult(
+                    tool=ToolType.SEARCH,
+                    success=True,
+                    data={
+                        "results": [
+                            {
+                                "doc_id": "case-0001",
+                                "title": "도로 파손 처리 사례",
+                                "content": "유사 민원 답변 예시",
+                                "score": 0.92,
+                            }
+                        ]
+                    },
+                    latency_ms=12.1,
+                ),
+                ToolResult(
+                    tool=ToolType.GENERATE,
+                    success=True,
+                    data={"text": "도로 파손 민원에 대한 답변 초안입니다."},
+                    latency_ms=18.6,
+                ),
+            ],
+            total_latency_ms=39.1,
+            final_text="도로 파손 민원에 대한 답변 초안입니다.",
+        )
+        manager.agent_loop.run = AsyncMock(return_value=trace)
+
+        resp = client.post(
+            "/v1/agent/run",
+            json={
+                "query": "도로 파손 민원 답변 초안 작성",
+                "session_id": session.session_id,
+            },
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["session_id"] == session.session_id
+        assert body["text"] == "도로 파손 민원에 대한 답변 초안입니다."
+        assert body["classification"]["category"] == "traffic"
+        assert body["search_results"][0]["doc_id"] == "case-0001"
+        assert body["trace"]["plan"] == ["classify", "search", "generate"]
+        assert body["trace"]["tool_results"][1]["tool"] == "search"
+
+    def test_agent_run_rejects_stream_flag(self, client_with_agent_loop):
+        """agent/run은 stream=True 요청을 거부한다."""
+        client, session = client_with_agent_loop
+
+        resp = client.post(
+            "/v1/agent/run",
+            json={
+                "query": "스트리밍으로 실행",
+                "session_id": session.session_id,
+                "stream": True,
+            },
+        )
+
+        assert resp.status_code == 400
+        assert "agent/stream" in resp.json()["detail"]
+
+    def test_agent_stream_returns_event_stream(self, client_with_agent_loop):
+        """agent/stream이 SSE 포맷 이벤트를 반환한다."""
+        client, session = client_with_agent_loop
+
+        async def _stream_events():
+            yield {
+                "type": "plan",
+                "request_id": "req-agent-stream-001",
+                "plan": ["classify", "search", "generate"],
+                "reason": "전체 파이프라인 실행",
+            }
+            yield {
+                "type": "final",
+                "request_id": "req-agent-stream-001",
+                "text": "최종 초안입니다.",
+                "finished": True,
+            }
+
+        manager.agent_loop.run_stream = _stream_events
+
+        resp = client.post(
+            "/v1/agent/stream",
+            json={
+                "query": "도로 파손 민원 스트리밍",
+                "session_id": session.session_id,
+            },
+        )
+
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/event-stream")
+        assert '"type": "plan"' in resp.text
+        assert '"type": "final"' in resp.text
+        assert "최종 초안입니다." in resp.text
+
+
 # ---------------------------------------------------------------------------
 # Endpoint Coverage Guard
 # ---------------------------------------------------------------------------
@@ -1083,6 +1234,8 @@ class TestSearchShiftLeft:
 
 _KNOWN_ENDPOINTS = {
     ("GET", "/health"),
+    ("POST", "/v1/agent/run"),
+    ("POST", "/v1/agent/stream"),
     ("POST", "/v1/classify"),
     ("POST", "/v1/generate"),
     ("POST", "/v1/stream"),
