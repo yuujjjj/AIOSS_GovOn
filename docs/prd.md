@@ -1,5 +1,5 @@
 # PRD: GovOn — 공무원을 위한 자율형 행정 에이전트 (Administrative Agentic IDE)
-**Status**: Draft | **Author**: Alex (Product Manager) | **Last Updated**: 2026-04-01 | **Version**: 4.1
+**Status**: Draft | **Author**: umyunsang | **Last Updated**: 2026-04-01 | **Version**: 4.1
 **Stakeholders**: Eng Lead, Design Lead, Public Safety Dept.
 
 ---
