@@ -429,6 +429,7 @@ LLM 학습 데이터 고정 (지식 컷오프 존재)
 │   LLM 서빙 레이어 │      검색 레이어          │
 │   vLLM + EXAONE  │  FAISS + multilingual-e5 │
 │   AWQ 양자화     │  BM25 하이브리드 검색     │
+│   (Multi-LoRA)   │                          │
 ├──────────────────┴──────────────────────────┤
 │           데이터 파이프라인 레이어             │
 │  크롤러(BeautifulSoup) | AI Hub 데이터       │
@@ -444,12 +445,12 @@ LLM 학습 데이터 고정 (지식 컷오프 존재)
 | 영역 | 기술 | 버전 | 역할 |
 |------|------|------|------|
 | **AI 모델** | EXAONE-Deep-7.8B | - | 한국어 특화 LLM (LG AI Research) |
-| **파인튜닝** | QLoRA (PEFT) | ≥ 0.10.0 | 민원 도메인 특화 학습 |
+| **파인튜닝** | QLoRA (PEFT) | ≥ 0.10.0 | 목적별 전문화 학습 (Brain, 민원답변, 공문서) |
 | **양자화** | AWQ (AutoAWQ) | - | INT4 양자화 — 온프레미스 운영 효율화 및 서버 비용 최적화 |
-| **LLM 서빙** | vLLM | ≥ 0.4.0 | PagedAttention 고성능 서빙 |
+| **LLM 서빙** | vLLM (Multi-LoRA) | ≥ 0.4.0 | PagedAttention 및 다중 어댑터 동적 서빙 |
 | **임베딩** | multilingual-e5-large | - | 1024차원 한국어 벡터 임베딩 |
 | **벡터 검색** | FAISS | ≥ 1.7.4 | 유사 사례 검색 인덱스 |
-| **백엔드** | FastAPI | ≥ 0.100.0 | REST API 서버 |
+| **백엔드** | FastAPI | ≥ 0.100.0 | REST API 서버 및 Orchestrator 역할 |
 | **프론트엔드** | React / Next.js | 18+ / 14+ | 웹 UI (Figma MCP 연동) |
 | **데이터 수집** | BeautifulSoup / Scrapy | - | 민원 데이터 크롤링 |
 | **학습 데이터** | AI Hub 공개 데이터 | - | 분류 레이블 포함 민원 데이터셋 |
@@ -462,13 +463,27 @@ LLM 학습 데이터 고정 (지식 컷오프 존재)
 
 ![시스템 아키텍처 다이어그램](outputs/M1_Planning/02_System_Design/architecture_diagram.png)
 
-**구성 요소 요약**:
-- **Frontend**: React / Next.js Web UI — 공무원 PC(내부망 브라우저)에서 접근
-- **Backend**: FastAPI — HTTP API(JSON)로 프론트엔드와 통신, LLM 추론 및 유사 사례 검색 요청 처리
-- **AI Engine Layer**:
-  - **vLLM Server**: EXAONE-Deep-7.8B (AWQ 양자화, PagedAttention) — 온프레미스 핵심 추론 처리
-  - **FAISS Vector DB**: multilingual-e5-large 임베딩 기반 유사 사례 검색(RAG)
-- **On-Prem Case Core Zone**: 민원 원문, 첨부 증빙 OCR 결과, 상담이력, 내부 처리 메모, 프롬프트 로그, 평가 로그
+**구성 요소 요약 (3-Tier Agentic Architecture & Multi-LoRA)**:
+GovOn 시스템은 공무원을 위한 자율형 에이전트 환경을 제공하기 위해 역할이 명확히 분리된 **3계층 에이전틱 아키텍처**로 설계되었습니다. 특히, 보급형 GPU의 물리적 제약(VRAM 부족)을 극복하고 각 에이전트(뇌/손/발)의 전문성을 극대화하기 위해 vLLM의 **Multi-LoRA 동적 서빙 기술**을 채택했습니다.
+
+1. **Human (UI 계층 - 인간)**: 사용자가 명령을 내리고 결과를 확인하는 창구
+   - **Frontend**: React / Next.js Web UI — 공무원 PC(내부망 브라우저)에서 접근.
+   - 채팅 기반 에이전트 사이드바를 통해 멀티턴 상호작용 및 지시 하달.
+
+2. **Brain (Query Engine / Orchestrator 계층 - 뇌)**: 의도를 분석하고 도구 사용을 결정하는 제어 센터
+   - **Backend**: FastAPI — 대화 맥락을 관리하며, vLLM 호출 시 작업 목적에 맞는 `lora_request`를 동적으로 할당(라우팅)하는 오케스트레이터.
+   - **LLM Engine (Base + Adapter 1)**: Base Model(EXAONE-AWQ) + **Tool-Calling 전용 LoRA**. 사용자 의도(Intent)를 파악하고 JSON 형태의 도구 호출 명세를 생성(Planning)하는 데 특화.
+
+3. **Hands and Feet (Tools 계층 - 손과 발)**: 실제 행정 처리를 수행하는 기능 도구들
+   - **Local RAG Tool (유사 사례 검색)**: FAISS Vector DB 기반으로 내부 지침 및 과거 민원 사례 검색.
+   - **Public API Tool (외부 API 조회)**: 데이터포털 API 연동 등을 통한 실시간 민원 사례/통계 조회.
+   - **Drafting Tool (문서 생성 기능 - Adapter 2, 3)**:
+     - **민원 답변 생성 LoRA**: 부드러운 어투와 대민용 표준 포맷에 특화된 어댑터.
+     - **공문서 생성 LoRA**: 보도자료, 연설문 등 딱딱하고 격식 있는 보고서/공문서 포맷에 특화된 어댑터.
+     - 오케스트레이터가 이 도구들을 호출할 때, vLLM에 해당 특화 LoRA를 지정하여 고품질의 텍스트를 생성합니다.
+
+**데이터 배치 및 보안 정책 존(Zone)**:
+- **On-Prem Case Core Zone**: 민원 원문, 첨부 증빙 OCR 결과, 상담이력, 내부 처리 메모, 프롬프트 로그, 평가 로그 (온프레미스 고정)
 - **Cloud-Ready Common Data Zone**: 공개 법령·지침·보도자료·표준 매뉴얼, 비식별 공공데이터, 향후 범정부 AI 공통기반 연계 대상
 - **Docker Compose**: 전체 서비스 오케스트레이션 (현재 MVP 기준 폐쇄망 내 완전 독립 운영)
 
