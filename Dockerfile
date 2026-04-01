@@ -10,6 +10,7 @@ LABEL org.opencontainers.image.description="GovOn AI Civil Complaint Analysis Sy
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     DEBIAN_FRONTEND=noninteractive \
+    SERVING_PROFILE="container" \
     MODEL_PATH="umyunsang/GovOn-EXAONE-LoRA-v2" \
     DATA_PATH="/app/data/processed/v2_train.jsonl" \
     INDEX_PATH="/app/models/faiss_index/complaints.index"

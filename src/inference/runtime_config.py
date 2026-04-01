@@ -25,6 +25,7 @@ class ServingProfile(str, Enum):
 
     LOCAL = "local"  # 로컬 개발 환경
     SINGLE = "single"  # 단일 서버 프로덕션
+    CONTAINER = "container"  # Docker / Cloud Run / 오프라인 패키지
     AIRGAP = "airgap"  # 폐쇄망 설치
 
 
@@ -57,6 +58,18 @@ _PROFILE_DEFAULTS: Dict[ServingProfile, Dict] = {
         "request_timeout_sec": 60,
         "cors_origins": [],
     },
+    ServingProfile.CONTAINER: {
+        "host": "0.0.0.0",
+        "port": 8000,
+        "workers": 1,
+        "gpu_utilization": 0.85,
+        "max_model_len": 8192,
+        "log_level": "INFO",
+        "reload": False,
+        "rate_limit_enabled": True,
+        "request_timeout_sec": 60,
+        "cors_origins": [],
+    },
     ServingProfile.AIRGAP: {
         "host": "0.0.0.0",
         "port": 8000,
@@ -70,6 +83,30 @@ _PROFILE_DEFAULTS: Dict[ServingProfile, Dict] = {
         "cors_origins": [],
     },
 }
+
+_CONTAINER_PLATFORM_ENV_MARKERS = (
+    "K_SERVICE",
+    "K_REVISION",
+    "K_CONFIGURATION",
+    "KUBERNETES_SERVICE_HOST",
+)
+
+
+def _resolve_serving_profile() -> ServingProfile:
+    """환경과 명시값을 기준으로 서빙 프로필을 결정한다."""
+    profile_name = os.getenv("SERVING_PROFILE")
+    if profile_name:
+        try:
+            return ServingProfile(profile_name.lower())
+        except ValueError:
+            logger.warning(f"알 수 없는 SERVING_PROFILE '{profile_name}', 기본값 'local' 사용")
+            return ServingProfile.LOCAL
+
+    if any(os.getenv(marker) for marker in _CONTAINER_PLATFORM_ENV_MARKERS):
+        logger.info("컨테이너 런타임 환경을 감지하여 'container' 프로필을 사용합니다.")
+        return ServingProfile.CONTAINER
+
+    return ServingProfile.LOCAL
 
 
 # ---------------------------------------------------------------------------
@@ -227,13 +264,7 @@ class RuntimeConfig:
         1. SERVING_PROFILE에 따른 프로필 기본값 적용
         2. 개별 환경변수로 오버라이드
         """
-        profile_name = os.getenv("SERVING_PROFILE", "local").lower()
-        try:
-            profile = ServingProfile(profile_name)
-        except ValueError:
-            logger.warning(f"알 수 없는 SERVING_PROFILE '{profile_name}', 기본값 'local' 사용")
-            profile = ServingProfile.LOCAL
-
+        profile = _resolve_serving_profile()
         defaults = _PROFILE_DEFAULTS[profile]
 
         skip_model_load = os.getenv("SKIP_MODEL_LOAD", "false").lower() in (
