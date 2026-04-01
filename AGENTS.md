@@ -28,6 +28,8 @@
 - PR 제목도 같은 형식을 사용한다.
 - PR 본문은 반드시 [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md)를 따른다.
 - 관련 이슈는 `## 관련 이슈` 섹션에 `Closes #...` 또는 `Refs #...`로 연결한다.
+- 내부 팀원/조직원이 `main` 대상으로 PR 생성을 요청한 경우, 사용자가 명시적으로 초안을 원하지 않는 한 `ready for review` PR을 기본값으로 사용한다.
+- 테스트 미실행, 후속 작업 필요 등의 사유는 PR 본문에 명시하되, 그 이유만으로 자동으로 draft PR로 올리지 않는다.
 
 예시:
 
