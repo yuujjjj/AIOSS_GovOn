@@ -24,6 +24,7 @@ except ImportError:
         SamplingParams = None
 
 # SKIP_MODEL_LOAD: E2E 테스트 등 모델 없이 서버만 기동할 때 사용
+# RuntimeConfig 로드 전 조기 참조용 (import 순서 의존성)
 SKIP_MODEL_LOAD = os.getenv("SKIP_MODEL_LOAD", "false").lower() in ("true", "1", "yes")
 
 from .agent_loop import AgentLoop, AgentTrace, ToolResult
@@ -33,6 +34,7 @@ from .feature_flags import FeatureFlags
 from .hybrid_search import HybridSearchEngine, SearchMode
 from .index_manager import IndexType, MultiIndexManager
 from .retriever import CivilComplaintRetriever
+from .runtime_config import RuntimeConfig, ServingProfile
 from .schemas import (
     AgentRunRequest,
     AgentRunResponse,
@@ -91,17 +93,19 @@ async def verify_api_key(api_key: str = Security(_api_key_header)):
         raise HTTPException(status_code=401, detail="유효하지 않은 API 키입니다.")
 
 
-# --- M3 Optimized Configuration ---
-MODEL_PATH = os.getenv("MODEL_PATH", "umyunsang/GovOn-EXAONE-LoRA-v2")
-DATA_PATH = os.getenv("DATA_PATH", "data/processed/v2_train.jsonl")
-INDEX_PATH = os.getenv("INDEX_PATH", "models/faiss_index/complaints.index")
+# --- Runtime Configuration ---
+runtime_config = RuntimeConfig.from_env()
+runtime_config.log_summary()
 
-# Optimized for 16GB VRAM with AWQ INT4 model
-GPU_UTILIZATION = float(os.getenv("GPU_UTILIZATION", "0.8"))
-MAX_MODEL_LEN = int(os.getenv("MAX_MODEL_LEN", "8192"))
-TRUST_REMOTE_CODE = True
+# 하위 호환을 위해 기존 모듈 레벨 변수 유지 (RuntimeConfig에서 참조)
+MODEL_PATH = runtime_config.model.model_path
+DATA_PATH = runtime_config.paths.data_path
+INDEX_PATH = runtime_config.paths.index_path
+GPU_UTILIZATION = runtime_config.gpu_utilization
+MAX_MODEL_LEN = runtime_config.max_model_len
+TRUST_REMOTE_CODE = runtime_config.model.trust_remote_code
 _PROJECT_ROOT = str(Path(__file__).resolve().parent.parent.parent)
-AGENTS_DIR = os.getenv("AGENTS_DIR", os.path.join(_PROJECT_ROOT, "agents"))
+AGENTS_DIR = runtime_config.paths.agents_dir
 
 # Apply EXAONE-specific runtime patches (모델 로드 시에만)
 if not SKIP_MODEL_LOAD:
@@ -140,8 +144,8 @@ class vLLMEngineManager:
                 trust_remote_code=TRUST_REMOTE_CODE,
                 gpu_memory_utilization=GPU_UTILIZATION,
                 max_model_len=MAX_MODEL_LEN,
-                dtype="half",
-                enforce_eager=True,
+                dtype=runtime_config.model.dtype,
+                enforce_eager=runtime_config.model.enforce_eager,
             )
 
             if hasattr(AsyncLLM, "from_engine_args"):
@@ -318,13 +322,14 @@ class vLLMEngineManager:
             if retrieved_cases:
                 augmented_prompt = self._augment_prompt(request.prompt, retrieved_cases)
 
-        # 3. Sampling parameters
+        # 3. Sampling parameters (generation defaults from RuntimeConfig)
+        gen_defaults = runtime_config.generation
         sampling_params = SamplingParams(
             temperature=request.temperature,
             top_p=request.top_p,
             max_tokens=request.max_tokens,
-            stop=request.stop,
-            repetition_penalty=1.1,  # Added for EXAONE stability
+            stop=request.stop or gen_defaults.stop_sequences,
+            repetition_penalty=gen_defaults.repetition_penalty,
         )
 
         return augmented_prompt, sampling_params, retrieved_cases
@@ -577,6 +582,8 @@ async def health():
 
     return {
         "status": "healthy",
+        "profile": runtime_config.profile.value,
+        "model": runtime_config.model.model_path,
         "rag_enabled": manager.index_manager is not None or manager.retriever is not None,
         "agents_loaded": manager.agent_manager.list_agents() if manager.agent_manager else [],
         "indexes": index_summary,
@@ -946,4 +953,4 @@ async def agent_stream(
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, **runtime_config.to_uvicorn_kwargs())
