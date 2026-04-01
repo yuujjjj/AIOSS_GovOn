@@ -84,6 +84,8 @@ jobs:
     permissions:
       packages: read
     steps:
+      - uses: actions/checkout@v6
+
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -129,19 +131,8 @@ jobs:
           WORKDIR=$(docker run --rm ${{ env.image }} pwd 2>&1) || true
           echo "| Working directory | ${WORKDIR} |" >> $GITHUB_STEP_SUMMARY
 
-      - name: Container startup test (graceful failure expected)
-        continue-on-error: true
+      - name: Container runtime smoke test
         run: |
-          # Start container in background - expected to fail (no GPU) but should start
-          docker run -d --name govon-test \
-            -e SKIP_MODEL_LOAD=true \
-            -e API_KEY=test-key \
-            -p 8000:8000 \
-            ${{ env.image }} || true
-
-          sleep 5
-
-          docker logs govon-test 2>&1 | head -50 || true
-          docker rm -f govon-test || true
-
-          echo "| Container startup test | ✅ (verified) |" >> $GITHUB_STEP_SUMMARY
+          HEALTH_RESPONSE="$(bash .github/scripts/smoke_test_container.sh "${{ env.image }}")"
+          echo "| Runtime contract | ✅ (/health ready with container profile) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Health response | \`${HEALTH_RESPONSE}\` |" >> $GITHUB_STEP_SUMMARY

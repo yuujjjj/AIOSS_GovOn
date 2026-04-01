@@ -116,6 +116,7 @@ docker pull ghcr.io/govon-org/govon:latest
 # 환경변수 설정
 export API_KEY=your-api-key
 export MODEL_PATH=umyunsang/GovOn-EXAONE-LoRA-v2
+export SERVING_PROFILE=container
 
 # 볼륨 디렉토리 생성
 mkdir -p models data agents configs
@@ -126,6 +127,8 @@ docker compose -f docker-compose.offline.yml up -d
 # 헬스체크
 curl http://localhost:8000/health
 ```
+
+GovOn 컨테이너 이미지는 Docker/Cloud Run/오프라인 패키지 경로를 공통으로 쓰기 위해 기본적으로 `SERVING_PROFILE=container`를 사용한다.
 
 ### 개발 환경
 

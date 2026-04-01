@@ -36,6 +36,7 @@ env:
   GCP_REGION: asia-northeast3
   AR_REPOSITORY: govon-repo
   GHCR_IMAGE: ghcr.io/govon-org/govon
+  DEPLOY_RUNTIME_ENV_VARS: SERVING_PROFILE=container,SKIP_MODEL_LOAD=true
 
 permissions:
   contents: read
@@ -144,7 +145,7 @@ jobs:
             --max-instances=3 \
             --timeout=300 \
             --concurrency=80 \
-            --set-env-vars="SKIP_MODEL_LOAD=true" \
+            --set-env-vars="${{ env.DEPLOY_RUNTIME_ENV_VARS }}" \
             --allow-unauthenticated \
             --format='value(status.url)'; then
             

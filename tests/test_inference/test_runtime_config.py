@@ -19,6 +19,7 @@ class TestServingProfile:
     def test_enum_values(self):
         assert ServingProfile.LOCAL.value == "local"
         assert ServingProfile.SINGLE.value == "single"
+        assert ServingProfile.CONTAINER.value == "container"
         assert ServingProfile.AIRGAP.value == "airgap"
 
 
@@ -44,12 +45,38 @@ class TestRuntimeConfigFromEnv:
         assert config.rate_limit_enabled is True
         assert config.request_timeout_sec == 60
 
+    def test_container_profile(self):
+        """SERVING_PROFILE=container 시 컨테이너 기본값이 적용된다."""
+        with patch.dict(os.environ, {"SERVING_PROFILE": "container"}, clear=True):
+            config = RuntimeConfig.from_env()
+        assert config.profile == ServingProfile.CONTAINER
+        assert config.host == "0.0.0.0"
+        assert config.reload is False
+        assert config.rate_limit_enabled is True
+        assert config.request_timeout_sec == 60
+
     def test_airgap_profile(self):
         """SERVING_PROFILE=airgap 시 폐쇄망 기본값이 적용된다."""
         with patch.dict(os.environ, {"SERVING_PROFILE": "airgap"}, clear=True):
             config = RuntimeConfig.from_env()
         assert config.profile == ServingProfile.AIRGAP
         assert config.request_timeout_sec == 90
+
+    def test_cloud_run_defaults_to_container_profile(self):
+        """Cloud Run 환경 마커가 있으면 container 프로필을 자동 선택한다."""
+        with patch.dict(os.environ, {"K_SERVICE": "govon-api"}, clear=True):
+            config = RuntimeConfig.from_env()
+        assert config.profile == ServingProfile.CONTAINER
+        assert config.host == "0.0.0.0"
+        assert config.reload is False
+
+    def test_explicit_profile_overrides_container_detection(self):
+        """SERVING_PROFILE 명시는 자동 감지보다 우선한다."""
+        env = {"K_SERVICE": "govon-api", "SERVING_PROFILE": "local"}
+        with patch.dict(os.environ, env, clear=True):
+            config = RuntimeConfig.from_env()
+        assert config.profile == ServingProfile.LOCAL
+        assert config.host == "127.0.0.1"
 
     def test_unknown_profile_falls_back_to_local(self):
         """알 수 없는 프로필은 local로 폴백한다."""
@@ -170,6 +197,14 @@ class TestToUvicornKwargs:
         with patch.dict(os.environ, {"SERVING_PROFILE": "single"}, clear=True):
             config = RuntimeConfig.from_env()
         kwargs = config.to_uvicorn_kwargs()
+        assert "reload" not in kwargs
+
+    def test_container_profile_no_reload(self):
+        with patch.dict(os.environ, {"SERVING_PROFILE": "container"}, clear=True):
+            config = RuntimeConfig.from_env()
+        kwargs = config.to_uvicorn_kwargs()
+        assert kwargs["host"] == "0.0.0.0"
+        assert kwargs["port"] == 8000
         assert "reload" not in kwargs
 
 
