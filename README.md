@@ -16,30 +16,38 @@ EXAONE-Deep-7.8B 모델을 QLoRA 파인튜닝 및 AWQ 양자화하여, 폐쇄망
 
 GovOn의 개발 방향을 공개적으로 공유합니다. **[🎯 모든 Initiative 보기](https://github.com/GovOn-Org/GovOn/issues?q=label%3A%22🎯+Initiative%22+sort%3Aupdated-desc)**
 
-### 🎬 Milestone 3: 고도화 및 최적화 (마감: 2026-05-22)
+### 🎬 First Release Focus: GovOn Shell (마감 목표: 2026-05-22)
 
-| # | Initiative | 상태 | 설명 |
-|---|-----------|------|------|
-| I-1 | [AI 모델 고도화](https://github.com/GovOn-Org/GovOn/issues/366) | 🎨 In Design | 공문서 파인튜닝 + KR-ELECTRA 분류기 |
-| I-2 | [AI 오케스트레이터 아키텍처](https://github.com/GovOn-Org/GovOn/issues/367) | 🎨 In Design | LLM Tool Call 파싱 + 오케스트레이터 메인 루프 |
-| I-3 | [Tool 통합](https://github.com/GovOn-Org/GovOn/issues/368) | 🎨 In Design | 민원분석 API + FAISS RAG + 공문서 검색/생성 Tool |
-| I-4 | [프론트엔드 Chat UI](https://github.com/GovOn-Org/GovOn/issues/369) | 🎨 In Design | Tool 실행 UI + HTML 공문서 렌더링 |
-| I-5 | [UI/UX 디자인 시스템](https://github.com/GovOn-Org/GovOn/issues/370) | 🛠️ In Progress | 와이어프레임 → 프로토타입 |
-| I-6 | [웹 UI 구축](https://github.com/GovOn-Org/GovOn/issues/371) | 🛠️ In Progress | Figma MCP + 컴포넌트 라이브러리 |
-| I-7 | [인프라 및 배포](https://github.com/GovOn-Org/GovOn/issues/372) | 🛠️ In Progress | Docker 컨테이너화 + 폐쇄망 배포 |
+첫 공개 릴리즈는 웹 UI보다 **터미널에서 설치하고 shell/bash에서 바로 사용하는 대화형 에이전트 셸**을 우선하며, 이 릴리즈 안에 **graph-based agentic decision framework**를 포함한다.
+
+Roadmap는 **Initiative 계층만** 표시한다. 세부 task는 각 initiative 본문과 [tasklist](/Users/yujeong/Desktop/26실증적/ondevice-ai-civil-complaint/GovOn/docs/GovOn-orchestrator-tasklist.md) 기준 canonical set을 따른다.
+
+| Track | 상태 | 관련 Initiative | 설명 |
+|---|---|---|---|
+| Runtime Foundation | 🛠️ In Progress | [#367](https://github.com/GovOn-Org/GovOn/issues/367), [#368](https://github.com/GovOn-Org/GovOn/issues/368) | runtime orchestration, tooling layer, session-connected backend foundation |
+| Agentic Decision Framework | 🎨 In Design | [#406](https://github.com/GovOn-Org/GovOn/issues/406), [#407](https://github.com/GovOn-Org/GovOn/issues/407) | state graph, tool selection guardrail, checkpoint, recovery, architecture sync |
+| Interactive Shell Client | 🎨 In Design | [#369](https://github.com/GovOn-Org/GovOn/issues/369) | `govon` 대화형 셸, 스트리밍 출력, 세션 UX, 복사/내보내기 |
+| Install & Offline Package | 🛠️ In Progress | [#372](https://github.com/GovOn-Org/GovOn/issues/372) | 패키지 배포, 오프라인 번들, 운영 명령, 폐쇄망 설치 경로 |
+| Release QA & Docs | 🎨 In Design | [#373](https://github.com/GovOn-Org/GovOn/issues/373), [#374](https://github.com/GovOn-Org/GovOn/issues/374), [#375](https://github.com/GovOn-Org/GovOn/issues/375) | shell 기준 E2E 테스트, agentic runtime 검증, 설치 가이드, 최종 납품 문서 |
+
+### ⏭️ Deferred After First Release
+
+| Track | 관련 이슈 | 설명 |
+|---|---|---|
+| Web / App UI Surface | [#370](https://github.com/GovOn-Org/GovOn/issues/370), [#371](https://github.com/GovOn-Org/GovOn/issues/371) | 동일한 agentic runtime 위에 웹/앱 UX를 얹는 고도화는 R2로 이월 |
 
 ### 📋 Milestone 4: 테스트 및 문서화 (마감: 2026-06-19)
 
 | # | Initiative | 상태 | 설명 |
 |---|-----------|------|------|
-| I-8 | [테스트 및 품질 보증](https://github.com/GovOn-Org/GovOn/issues/373) | 🎨 In Design | E2E 오케스트레이터 테스트 + 품질 평가 |
-| I-9 | [프로젝트 문서화 및 마무리](https://github.com/GovOn-Org/GovOn/issues/374) | 🎨 In Design | 사용자 매뉴얼 + 최종 회고 |
+| I-8 | [테스트 및 품질 보증](https://github.com/GovOn-Org/GovOn/issues/373) | 🎨 In Design | shell 기준 E2E, 설치/운영 smoke test, 실사용 검증 |
+| I-9 | [프로젝트 문서화 및 마무리](https://github.com/GovOn-Org/GovOn/issues/374) | 🎨 In Design | shell 사용자 가이드, 운영 문서, 최종 회고 |
 
 ### 🏁 Milestone 5: AIOSS CI/CD 및 품질 고도화 (마감: 2026-06-19)
 
 | # | Initiative | 상태 | 설명 |
 |---|-----------|------|------|
-| I-10 | [AIOSS 최종 납품](https://github.com/GovOn-Org/GovOn/issues/375) | 🛠️ In Progress | 캡스톤 AI OSS 프로젝트 최종 납품 |
+| I-10 | [AIOSS 최종 납품](https://github.com/GovOn-Org/GovOn/issues/375) | 🛠️ In Progress | GovOn Shell + Runtime + 오프라인 배포 패키지 최종 납품 |
 
 ### 범례
 - 🎨 **In Design** — 설계/기획 단계
