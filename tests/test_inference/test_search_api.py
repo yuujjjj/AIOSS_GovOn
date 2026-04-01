@@ -322,17 +322,28 @@ class TestSearchEndpoint:
 
     def test_search_not_initialized_returns_503(self, client):
         """index_manager=None 시 503을 반환한다."""
-        manager.index_manager = None
+        original_index_manager = manager.index_manager
+        original_retriever = manager.retriever
+        original_hybrid_engine = getattr(manager, "hybrid_engine", None)
 
-        response = client.post(
-            "/search",
-            json={
-                "query": "테스트 쿼리",
-                "top_k": 5,
-                "doc_type": "case",
-            },
-        )
-        assert response.status_code == 503
+        manager.index_manager = None
+        manager.retriever = None
+        manager.hybrid_engine = None
+
+        try:
+            response = client.post(
+                "/search",
+                json={
+                    "query": "테스트 쿼리",
+                    "top_k": 5,
+                    "doc_type": "case",
+                },
+            )
+            assert response.status_code == 503
+        finally:
+            manager.index_manager = original_index_manager
+            manager.retriever = original_retriever
+            manager.hybrid_engine = original_hybrid_engine
 
 
 # ---------------------------------------------------------------------------

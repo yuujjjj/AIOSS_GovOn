@@ -1194,7 +1194,7 @@ class TestAgentLoopShiftLeft:
         """agent/stream이 SSE 포맷 이벤트를 반환한다."""
         client, session = client_with_agent_loop
 
-        async def _stream_events():
+        async def _stream_events(*args, **kwargs):
             yield {
                 "type": "plan",
                 "request_id": "req-agent-stream-001",
@@ -1210,19 +1210,21 @@ class TestAgentLoopShiftLeft:
 
         manager.agent_loop.run_stream = _stream_events
 
-        resp = client.post(
+        with client.stream(
+            "POST",
             "/v1/agent/stream",
             json={
                 "query": "도로 파손 민원 스트리밍",
                 "session_id": session.session_id,
             },
-        )
+        ) as resp:
+            body = "\n".join(resp.iter_lines())
 
-        assert resp.status_code == 200
-        assert resp.headers["content-type"].startswith("text/event-stream")
-        assert '"type": "plan"' in resp.text
-        assert '"type": "final"' in resp.text
-        assert "최종 초안입니다." in resp.text
+            assert resp.status_code == 200
+            assert resp.headers["content-type"].startswith("text/event-stream")
+            assert '"type": "plan"' in body
+            assert '"type": "final"' in body
+            assert "최종 초안입니다." in body
 
 
 # ---------------------------------------------------------------------------
