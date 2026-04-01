@@ -1,382 +1,351 @@
-# GovOn Development Tasks: Orchestrator, Tool Calling, Multi-LoRA & Public Doc Fine-Tuning
+# GovOn Release Refactor: Shell-First First Release
 
-**Updated**: 2026-04-01
-**Status**: Active (Smolagents Phase 1 기반, ADR-006 v2.0 sync)
+**Updated**: 2026-04-01  
+**Status**: Active  
+**Decision**: 첫 릴리즈는 `터미널 설치 + shell/bash 대화형 에이전트 + graph-based 의사결정 프레임워크`를 기준으로 재정의한다.
 
-## Specification Summary
+## Release Goal
 
-**Core Requirements**:
-1. **Multi-LoRA Fine-Tuning**: 3개의 독립적인 LoRA 어댑터 (Brain, Civil, Public Doc)
-2. **Smolagents 기반 Orchestrator**: FastAPI + Smolagents ToolCallingAgent 통합
-3. **Tool Integration**: 4개 표준화 Tool (@tool 데코레이터)
-4. **Frontend Chat UI**: Tool 실행 인디케이터 + 공문서 렌더링
-5. **UI/UX Design System**: Figma 기반 디자인 토큰 + 컴포넌트 라이브러리
-6. **Infrastructure**: Multi-LoRA vLLM 컨테이너화 + 폐쇄망 배포
+첫 공개 릴리즈의 제품 형태는 기존의 웹 UI 또는 행정 시스템 사이드 패널이 아니라 다음과 같이 정의한다.
 
-**Architecture References**:
-- [ADR-006: 3-Tier Agentic Architecture + Multi-LoRA Serving (v2.0)](docs/architecture/ADR-006-agentic-architecture.md)
-- [WORKFLOW: Orchestrator & Tool-Calling (v2.0)](docs/architecture/WORKFLOW-orchestrator-tool-calling.md)
+- 사용자는 `pip install GovOn` 또는 오프라인 번들 설치 후 `govon` 명령으로 진입한다.
+- `govon`은 shell/bash 안에서 실행되는 대화형 에이전트 셸이다.
+- 첫 릴리즈 안에 LLM의 도구 선택과 중단/재시도/합성을 제어하는 graph-based agentic orchestration 계층을 포함한다.
+- GovOn은 기존 행정 시스템을 대체하지 않고, 공무원이 복사/붙여넣기로 병행 사용하는 독립형 업무 어시스턴트다.
+- 첫 릴리즈는 현재 이미 구현된 `추론 API + 검색 + 패키징 기반`을 재사용해 가장 빠르게 출하 가능한 형태를 목표로 한다.
 
----
+## Current Baseline
 
-## Workstream 1: Data Collection & Multi-LoRA Fine-Tuning
+### 이미 구축된 것
 
-**Initiative**: I-1 (#366)
-**Milestone**: M3: 고도화 및 최적화
+- 데이터 수집 및 전처리 파이프라인
+  - `src/data_collection_preprocessing/`
+- QLoRA 학습 및 AWQ 양자화 스크립트
+  - `src/training/`
+  - `src/quantization/`
+- FastAPI 기반 추론 API
+  - `/v1/classify`
+  - `/v1/generate`
+  - `/v1/stream`
+  - `/v1/search`
+- FAISS + BM25 기반 하이브리드 검색
+  - `src/inference/retriever.py`
+  - `src/inference/hybrid_search.py`
+  - `src/inference/index_manager.py`
+- 기본 에이전트 페르소나 로더
+  - `src/inference/agent_manager.py`
+- DB 모델, CRUD, Alembic 마이그레이션 초안
+  - `src/inference/db/`
+- Python 패키지/오프라인 배포 워크플로우
+  - `.github/workflows/publish-package.yml`
+  - `.github/workflows/offline-package.yml`
 
-### [ ] Task 1.1: 공공문서 데이터 수집 및 전처리
-**Issue**: #408
-**Description**: 행안부 공공데이터포털(`apis.data.go.kr/1741000/publicDoc`) API를 통해 5종 공문서 수집
+### 아직 없는 것
+
+- `govon` 대화형 셸 엔트리포인트
+- shell/TUI 세션 UX
+- shell에서 재개 가능한 대화 세션 저장/복구 흐름
+- shell 전용 출력 포맷과 slash command 체계
+- 런타임 부트스트랩 명령 (`serve`, `doctor`, `index`, `health`)
+- graph-based agentic decision framework (LangGraph 또는 동급 orchestration 계층)
+- tool selection guardrail, checkpoint, recovery 정책
+- 브라우저/사이드 패널 웹 UI
+
+## GitHub Issue Findings
+
+### 핵심 문제
+
+- 현재 공개 로드맵과 대부분의 M3 이슈는 `웹 UI`와 `agentic framework`를 한 덩어리로 섞어 관리하고 있다.
+- 실제 코드베이스는 `runtime/API/search`는 존재하지만 `shell client`, `session shell UX`, `graph-based decision layer`, `tool guardrail`, `웹 UI`는 아직 미구현이다.
+- 오픈 child task 이슈가 중복 생성되어 있어 실행 순서가 흐려져 있다.
+
+### 중복 이슈 클러스터
+
+아래 클러스터는 의미가 겹치므로, 실제 GitHub 정리 전까지는 **Initiative 이슈를 상위 기준**으로 보고 child task는 참조용으로만 사용한다.
+
+- Workstream 1.x
+  - `#376-#378`
+  - `#389-#391`
+  - `#408`
+- Workstream 2.x
+  - `#379-#380`
+  - `#392-#393`
+  - `#409-#410`
+- Workstream 3.x
+  - `#381-#384`
+  - `#394-#397`
+  - `#416`
+- Workstream 4.x
+  - `#385-#386`
+  - `#398-#399`
+  - `#411-#412`
+- Workstream 5.x
+  - `#387-#388`
+  - `#400-#401`
+  - `#413-#414`
+
+## Refactor Policy
+
+기존 GitHub 이슈는 당장 삭제하지 않고 아래 정책으로 재분류한다.
+
+### R1에 직접 사용
+
+- `#402` Public Roadmap
+- `#367` AI 오케스트레이터 아키텍처
+- `#368` Tool 통합
+- `#372` 인프라 및 배포
+- `#373` 테스트 및 품질 보증
+- `#374` 프로젝트 문서화 및 마무리
+- `#375` AIOSS 최종 납품
+- `#406` 에이전틱 의사결정 프레임워크
+- `#407` 에이전틱 아키텍처 문서 동기화
+- `#409`, `#410`, `#415`, `#416`, `#417`, `#418`
+  - graph 기반 의사결정과 tool orchestration 세부 태스크
+- `#129` Agent 세션 관리 시스템
+- `#405` 폐쇄망 배포(Offline) 스크립트 최적화
+
+### R1에 부분 전용 또는 재목적화
+
+- `#369` 기존 웹 Chat UI 이슈
+  - 첫 릴리즈에서는 `브라우저 UI` 대신 `interactive shell client` 범위로 해석
+- `#132` 스트리밍 UI
+  - 첫 릴리즈에서는 `streaming shell output`으로 해석
+- `#140` 행정 시스템 사이드 패널 UI
+  - 첫 릴리즈에서는 `shell session layout + command palette`로 해석
+- `#144` 프론트엔드-백엔드 API 연동
+  - 첫 릴리즈에서는 `shell client-runtime API adapter`로 해석
+- `#161` 출처 표시 API 연동
+  - 첫 릴리즈에서는 `shell sources/citations view`로 해석
+- `#404` 컨테이너화
+  - 첫 릴리즈에서는 `runtime container + optional shell companion packaging`으로 축소
+
+### R1 이후로 defer
+
+- `#370`, `#371`, `#141`, `#133-#139`, `#50`, `#57`, `#63`
+  - 웹 UI/디자인/사이드 패널은 R2 이후
+- `#414`
+  - legacy 공문서 품질 메트릭 이슈는 새 shell-first 품질 평가 태스크(`#401`)로 대체
+
+## Refactored Workstreams
+
+### Workstream A: Runtime Hardening for Shell Release
+
+**Primary Issues**: `#367`, `#368`, `#129`  
+**Goal**: 현재 있는 FastAPI + 검색 + 생성 기능을 shell client가 안정적으로 사용할 수 있는 런타임으로 정리
+
+#### A.1 API contract 고정
+
+- 분류, 생성, 스트리밍, 검색 응답을 shell client가 쓰기 쉬운 형태로 고정
+- retrieved cases / search results / 에러 메시지 포맷 명확화
+- health output을 shell `doctor` 명령에서 그대로 재사용 가능하게 정리
+
+#### A.2 Session persistence 최소 구현
+
+- shell session 기준의 대화 저장 구조 정의
+- DB 또는 로컬 SQLite 중 개발/배포 기본값 결정
+- 세션 생성, 이어쓰기, 최근 세션 조회, 종료 흐름 정의
+
+#### A.3 Source-aware response 개선
+
+- 검색 결과를 shell에서 읽기 쉬운 블록으로 변환
+- 근거와 초안의 출력 순서를 고정
+- 복사 가능한 최종본과 참고자료 구분
+
 **Acceptance Criteria**:
-- 5개 카테고리에서 각 1,000건 이상 수집 (총 5,000건)
-- `src/data_collection_preprocessing/collect_public_docs.py` 스크립트
-- 페이지네이션 및 Rate limiting 구현
-- JSONL 형식 저장
 
-### [ ] Task 1.2: 목적별 3종 독립 학습 데이터셋 전처리 및 데이터 무결성 검증
-**Issue**: #390
-**Description**: Task 1.1 데이터와 기존 AI Hub 데이터를 3종 데이터셋으로 정제
+- shell client가 `/v1/classify`, `/v1/generate`, `/v1/stream`, `/v1/search`만으로 1차 업무 플로우를 수행
+- session id 기준으로 최소 1회 이상 대화 이어쓰기 가능
+- 검색/생성 실패 시 shell에 구조화된 에러를 출력
+
+### Workstream B: Agentic Decision Framework
+
+**Primary Issues**: `#406`, `#407`, `#409`, `#410`, `#415`, `#416`, `#417`, `#418`  
+**Goal**: LLM이 무작정 tool을 호출하지 않도록 stateful graph와 명시적 guardrail을 갖춘 agentic runtime을 첫 릴리즈에 포함
+
+#### B.1 Graph runtime and state schema
+
+- 세션 상태, 사용자 의도, tool 후보, 이전 근거, 최종 초안 버전을 하나의 graph state로 정의
+- model adapter와 tool registry를 graph 노드에서 공통 사용
+- 노드 실행 trace를 audit log와 shell transcript에 남길 수 있도록 설계
+
+#### B.2 Decision policy and guardrails
+
+- 질문 유형에 따라 `답변 직접 생성`, `검색 우선`, `검색 후 초안 생성`, `재질문` 중 무엇을 할지 결정
+- low-confidence 또는 빈 검색 결과에서 바로 tool 남발하지 않도록 stop/retry/ask-back 규칙 정의
+- tool별 입력 검증과 호출 가능 조건 정의
+
+#### B.3 Tool execution and synthesis nodes
+
+- 검색/외부 API/초안 생성 action을 graph node로 연결
+- tool 결과, citations, 실패 정보를 표준 state 필드로 정규화
+- 최종 합성 단계에서 근거와 초안을 함께 생성
+
+#### B.4 Checkpoint, recovery, and human-in-the-loop
+
+- turn 단위 checkpoint 저장
+- 실패 시 해당 노드부터 재시도 가능
+- shell에서 `/retry`, `/sources`, `/session resume` 같은 제어 흐름과 연결
+
 **Acceptance Criteria**:
-- `dataset_brain.jsonl`: Tool-Calling 의도 파악 (약 1만 건)
-- `dataset_civil.jsonl`: 부드러운 대민 답변 (AI Hub 민원)
-- `dataset_public_doc.jsonl`: 공문서 양식 학습 (Task 1.1 수집 데이터)
-- 데이터 무결성 검증 완료
 
-### [ ] Task 1.3: EXAONE-Deep-7.8B Multi-LoRA 독립 파인튜닝
-**Issue**: #391
-**Description**: QLoRA를 사용해 3개 LoRA 어댑터를 각각 독립 학습
+- 한 번의 요청에서 multi-step tool orchestration이 state graph 기준으로 동작
+- 불필요한 tool 호출을 줄이는 guardrail이 존재
+- graph node trace와 checkpoint가 세션 저장소와 연결
+- shell client가 graph 기반 runtime과 end-to-end로 동작
+
+### Workstream C: Interactive GovOn Shell
+
+**Primary Issues**: `#369` partial, `#132` partial, `#144` partial  
+**Goal**: `govon` 명령으로 진입하는 대화형 셸 제공
+
+#### B.1 `govon` 엔트리포인트 추가
+
+- `pyproject.toml`에 제품용 entrypoint 추가
+- 초기 진입 화면, 연결 상태, 환경 확인, 기본 도움말 제공
+
+#### B.2 대화형 셸 UX
+
+- 기본 자유 입력
+- slash commands:
+  - `/help`
+  - `/classify`
+  - `/search`
+  - `/draft`
+  - `/sources`
+  - `/session`
+  - `/copy`
+  - `/exit`
+- 멀티라인 민원 붙여넣기 지원
+
+#### B.3 스트리밍 출력
+
+- `/v1/stream` 기반 토큰 스트리밍
+- thinking/searching/generating 상태 텍스트
+- 완료 시 최종 초안과 근거 요약 분리 표시
+
+#### B.4 복사/내보내기
+
+- 최종 초안만 출력
+- 세션 transcript 저장
+- markdown/text export
+
 **Acceptance Criteria**:
-- 3종 LoRA 어댑터 생성 (`adapter_brain`, `adapter_civil`, `adapter_public_doc`)
-- 각 어댑터의 개별 평가 메트릭 달성 (Brain: JSON accuracy >= 90%, Civil: ROUGE-L >= 0.45, Public Doc: 형식 정확도 >= 85%)
-- **LoRA 어댑터 레지스트리 파일 생성**: `config/lora_adapters.yaml` (ADR-006 v2.0 참고)
-  - 경로, 대상 모듈, Task, 평가 메트릭 메타데이터 포함
-  - vLLM Task 2.1, Smolagents Task 2.3에서 참조할 수 있는 형태
 
----
+- 사용자가 `govon` 실행 후 별도 웹 UI 없이 대화형으로 민원 분류, 검색, 초안 생성을 수행
+- shell에서 민원 본문 붙여넣기 후 한 세션 내 반복 수정 가능
+- `govon --help`와 `/help` 모두 동작
 
-## Workstream 2: Orchestrator Architecture (Smolagents 기반)
+### Workstream D: Packaging, Install, Offline Delivery
 
-**Initiative**: I-2 (#367) + I-9 (#406)
-**Milestone**: M3: 고도화 및 최적화
-**선행 조건**: I-9 Task 9.1 완료 필수
+**Primary Issues**: `#372`, `#404`, `#405`, `#375`  
+**Goal**: shell-first 제품을 실제 설치/배포 가능한 형태로 출하
 
-### [ ] Task 2.1: vLLM Multi-LoRA 서빙 인프라 및 설정 구성
-**Issue**: #392
-**Description**: vLLM 서버를 Multi-LoRA 모드(`--enable-lora`)로 구성하고 3개 어댑터 등록
+#### C.1 Python package 배포 정리
+
+- `pip install GovOn` 또는 extras 기반 설치 경로 정의
+- runtime 의존성과 client 의존성 분리
+- 버전/릴리즈 태그 정책 정리
+
+#### C.2 Offline package 재구성
+
+- 현재 Docker image 중심 번들에 shell 실행 경로 추가
+- 오프라인 환경에서 `govon` client와 runtime을 함께 기동하는 절차 문서화
+- smoke-test를 shell flow 기준으로 보강
+
+#### C.3 운영 명령 정의
+
+- `govon serve`
+- `govon doctor`
+- `govon health`
+- `govon session list`
+- `govon config init`
+
 **Acceptance Criteria**:
-- vLLM `--enable-lora` flag 활성화
-- `config/lora_adapters.yaml`을 읽어 `--lora-modules` 파라미터 자동 생성
-- 3개 어댑터 동시 로드 (RTX 3060 12GB 기준 OOM 없음)
-- vLLM 헬스체크 엔드포인트 정상 동작
 
-### [ ] Task 2.2: 오케스트레이터 메인 루프 및 동적 LoRA 라우팅 구현
-**Issue**: #393
-**Description**: FastAPI 백엔드에서 Smolagents Agent와 vLLM을 통합하고 LoRA 동적 라우팅 구현
+- 온라인 설치: 패키지 설치 후 `govon` 명령 사용 가능
+- 오프라인 설치: 번들 해제 후 shell client + runtime 기동 가능
+- 운영자 문서만 읽고 환경 구성 가능
+
+### Workstream E: Release QA, Docs, Acceptance
+
+**Primary Issues**: `#373`, `#374`, `#375`, `#400`, `#60`, `#61`, `#59`  
+**Goal**: shell-first 릴리즈를 실제 납품 가능한 상태로 검증
+
+#### D.1 Shell E2E 테스트
+
+- 세션 시작
+- 민원 붙여넣기
+- 분류
+- 검색
+- 초안 생성
+- 세션 저장/재개
+
+#### D.2 설치/운영 문서
+
+- online install
+- offline install
+- runtime bootstrap
+- shell command guide
+- troubleshooting
+
+#### D.3 사용자 검증
+
+- 공무원 또는 프로젝트 팀 기준으로 복붙 기반 업무 플로우 검증
+- 기존 행정 시스템 옆에서 병행 사용 가능한지 확인
+
 **Acceptance Criteria**:
-- 세션 관리 (SQLAlchemy ORM, #129 연계)
-- 컨텍스트 윈도우 관리
-- Tool 요청에 따른 LoRA 동적 스위칭 (adapter_brain, adapter_civil, adapter_public_doc)
-- 에러 핸들링 및 타임아웃 관리
 
-### [ ] Task 2.3: Smolagents AgentExecutor 구현
-**Issue**: #409
-**Description**: Smolagents ToolCallingAgent를 FastAPI와 통합
-**Acceptance Criteria**:
-- vLLM의 OpenAI-compatible endpoint를 Smolagents `OpenAIServerModel`로 래핑
-- Smolagents Agent 초기화 (4개 @tool 레지스트리)
-- Brain LoRA(`adapter_brain`) 사용해 의도 파악
-- E2E 테스트: 의도 결정 정확도 >= 85%
-- 의존성: I-9 Task 9.1 완료 후 진행
+- shell 기준 핵심 E2E 시나리오 통과
+- 설치 문서로 재현 가능
+- 첫 릴리즈 정의와 README/roadmap/tasklist가 일치
 
-### [ ] Task 2.4: LangGraph 전환 준비 (선택적)
-**Issue**: #410
-**Description**: 향후 EXAONE 4.0 도입 시 LangGraph 전환을 위한 마이그레이션 가이드 작성
-**Acceptance Criteria**:
-- `docs/architecture/MIGRATION-smolagents-to-langgraph.md` 작성
-- Tool 인터페이스 마이그레이션 테이블
-- 전환 패턴 및 예상 공수
-- 선택적 Task (M3 deadline 불포함)
+## First Release Scope
 
-### [ ] Task 2.5 (부자 이슈): #129 Agent 세션 관리 시스템 구현
-**Description**: 대화 이력 영속성, 컨텍스트 윈도우 관리
+### In
 
----
+- `govon` interactive shell
+- graph-based agentic orchestration
+- tool selection guardrail and checkpoint
+- classify/search/draft workflow
+- session persistence
+- runtime health/doctor
+- online/offline install
+- release docs and smoke test
 
-## Workstream 3: Tool Integration (Smolagents @tool 기반)
+### Out
 
-**Initiative**: I-3 (#368)
-**Milestone**: M3: 고도화 및 최적화
-**선행 조건**: I-9 Task 9.2 완료 필수
+- 브라우저 기반 Chat UI
+- 행정 시스템 내장 사이드 패널
+- Figma 기반 디자인 시스템
+- 웹/앱 전용 시각 디자인 고도화
 
-### [ ] Task 3.1: 민원분석 API 클라이언트 Tool 구현
-**Issue**: #394
-**Description**: `apis.data.go.kr/1140100/minAnalsInfoView5` API를 Smolagents `@tool` 형식으로 구현
-**Acceptance Criteria**:
-- 민원 키워드 기반 유사 사례 검색
-- 10초 타임아웃
-- Smolagents @tool 인터페이스 준수 (입력: Pydantic/기본타입, 반환: str/dict)
-- 의존성: I-9 Task 9.2 완료 후 진행
+## Release Sequence
 
-### [ ] Task 3.2: 기존 FAISS RAG를 표준화 Tool 인터페이스로 리팩토링
-**Issue**: #395
-**Description**: `retriever.py` + `hybrid_search.py`를 Smolagents `@tool`로 래핑
-**Acceptance Criteria**:
-- FAISS/BM25 하이브리드 검색
-- Top-k 유사 문서 반환
-- Smolagents 인터페이스 준수
-- 의존성: I-9 Task 9.2 완료 후 진행
+### R1: GovOn Agentic Shell
 
-### [ ] Task 3.3: 공문서 검색 Tool 구현
-**Issue**: #396
-**Description**: 행안부 공문서 API 기반 문서 검색 Tool
-**Acceptance Criteria**:
-- Task 1.1 수집 데이터에 대한 벡터 검색 (임베딩 모델: multilingual-e5-large)
-- Smolagents @tool 형식
-- 의존성: I-9 Task 9.2 완료 후 진행
+- 설치형 대화형 shell
+- graph-based decision framework
+- tool orchestration + checkpoint
+- 복붙 기반 실무 보조
 
-### [ ] Task 3.4: 공문서/민원 답변 생성 Tool (LoRA 동적 연동)
-**Issue**: #397
-**Description**: vLLM Multi-LoRA 어댑터를 활용한 문서 생성 Tool
-**Acceptance Criteria**:
-- `adapter_civil`: 민원 답변 생성 (lora_request="adapter_civil")
-- `adapter_public_doc`: 공문서 초안 생성 (lora_request="adapter_public_doc")
-- Smolagents @tool 형식
-- HTML 테이블 및 Markdown 구조 보존
-- 의존성: I-1 Task 1.3 + I-9 Task 9.2 완료 후 진행
+### R2: Side Panel / Web UI
 
-### [ ] Task 3.5+ (부자 이슈들):
-- #155: RRF 통합
-- #159: ContextAwareQueryBuilder
-- #160: 동적 인덱싱
+- 브라우저 UI
+- 행정 시스템 병행형 패널
+- 디자인 시스템
 
----
+## GitHub Cleanup Status
 
-## Workstream 4: Frontend Chat UI & Backend 연동
+이번 refactor에서 아래 정리를 반영했다.
 
-**Initiative**: I-4 (#369)
-**Milestone**: M3: 고도화 및 최적화
+1. `#402` roadmap body를 shell-first release 기준으로 수정
+2. Initiative canonical set을 `#367`, `#368`, `#369`, `#372`, `#373`, `#374`, `#375`, `#406`, `#407`로 재정의
+3. 상세 태스크 canonical set을 `#129`, `#132`, `#140`, `#144`, `#161`, `#392-#397`, `#400-#405`, `#409`, `#410`, `#415-#418`, `#60`, `#62`, `#41`로 재배치
+4. `Deferred Post-R1` 표기는 UI 고도화 이슈 중심으로 축소
+5. 남은 후속 정리는 실제 구현이 시작된 뒤 중복 이슈를 닫는 cleanup pass로 수행
 
-### [ ] Task 4.1: Tool 실행 UI 인디케이터 구현
-**Issue**: #411
-**Description**: Tool 실행 중 사용자에게 시각적 피드백 제공
-**Acceptance Criteria**:
-- 3가지 이상 Tool 타입별 로딩 상태 표시
-- 로딩 스피너 + 상태 텍스트
-- Tool 타임아웃 시 에러 상태
+## Status Summary
 
-### [ ] Task 4.2: HTML 테이블 및 이미지 공문서 렌더링
-**Issue**: #412
-**Description**: MessageBubble에서 공문서 HTML 테이블 및 이미지 안전하게 렌더링
-**Acceptance Criteria**:
-- react-markdown + remark-gfm 확장
-- DOMPurify 기반 sanitization
-- 반응형 테이블 스타일링
-- 이미지 placeholder 링크
-
-### [ ] Task 4.3+ (부자 이슈들):
-- #132: 스트리밍 UI
-- #140: 행정 시스템 연동 사이드 패널
-- #141: 반응형 웹 디자인
-- #144: API 연동
-- #161: 출처 표시 API 연동
-
----
-
-## Workstream 5: UI/UX 디자인 시스템
-
-**Initiative**: I-5 (#370)
-**Milestone**: M3: 고도화 및 최적화
-
-### [ ] 디자인 시스템 구축
-- #133: 와이어프레임
-- #134: UI/UX 화면 설계서
-- #135: 목업 디자인
-- #136: 인터랙티브 프로토타입
-- #137: 디자인 시스템 및 스타일 가이드
-- #63: 동서대 협업
-
----
-
-## Workstream 6: 웹 UI 구축 (Figma MCP + 컴포넌트)
-
-**Initiative**: I-6 (#371)
-**Milestone**: M3: 고도화 및 최적화
-**선행 조건**: I-5 완료 권장
-
-### [ ] Figma MCP 기반 웹 UI 구축
-- #50: Figma MCP 기반 프론트엔드 웹 UI 구축
-- #57: Figma MCP 기반 프론트엔드 고도화
-- #138: 공통 UI 컴포넌트 라이브러리
-- #139: 메인 랜딩 페이지
-
----
-
-## Workstream 7: 인프라 및 배포 (Multi-LoRA + vLLM)
-
-**Initiative**: I-7 (#372)
-**Milestone**: M3: 고도화 및 최적화
-
-### [ ] Task 7.1: vLLM Multi-LoRA 컨테이너화 구성
-**Issue**: #404
-**Description**: Docker 이미지 작성 (EXAONE-Deep AWQ + 3개 LoRA)
-**Acceptance Criteria**:
-- Dockerfile 작성 (NVIDIA CUDA 기반)
-- 이미지 빌드 및 GPU 모드 실행 성공
-- 의존성: I-1 Task 1.3 완료 후 진행
-
-### [ ] Task 7.2: 폐쇄망 배포(Offline) 스크립트 최적화
-**Issue**: #405
-**Description**: 인터넷 연결 없이 RTX 3060 서버에 배포하기 위한 스크립트
-**Acceptance Criteria**:
-- 모델 + LoRA 가중치 오프라인 번들
-- 의존성 사전 설치 스크립트
-- 배포 자동화 스크립트
-- 의존성: Task 7.1 완료 후 진행
-
----
-
-## Workstream 8: 테스트 및 품질 보증
-
-**Initiative**: I-8 (#373)
-**Milestone**: M4: 테스트 및 문서화
-
-### [ ] Task 5.1: 오케스트레이터 E2E 통합 테스트
-**Issue**: #413
-**Description**: I-2, I-3, I-4 전체 오케스트레이터 루프의 E2E 테스트
-**Acceptance Criteria**:
-- TC-01~TC-07 전 시나리오 통과 (WORKFLOW v2.0 정의)
-- Tool 호출 정확도 >= 90%
-- Tool 실행 성공률 >= 95%
-- 응답 레이턴시: Tool 없음 < 5초, Tool 포함 < 15초
-- Multi-turn 대화 검증
-
-### [ ] Task 5.2: 공문서 품질 평가 메트릭
-**Issue**: #414
-**Description**: LLM 생성 공문서 초안의 품질 정량화
-**Acceptance Criteria**:
-- 평가 메트릭 정의 (형식, 구문, 내용 충실도)
-- 기준선 평가 (100개 샘플)
-- 자동 평가 스크립트
-- 평가 보고서
-
-### [ ] 부자 이슈들:
-- #59: 통합 테스트 및 성능 벤치마킹
-- #61: 사용자 수용 테스트 (UAT)
-- #142: 실무 환경 통합 테스트
-
----
-
-## Workstream 9: Smolagents 에이전트 프레임워크 도입
-
-**Initiative**: I-9 (#406)
-**Milestone**: M3: 고도화 및 최적화
-**상태**: Phase 1 (선행 Initiative -- I-2, I-3의 의존 조건)
-
-### [ ] Task 9.1: Smolagents 환경 구성 및 EXAONE vLLM 래핑
-**Issue**: #415
-**Description**: Smolagents 패키지 설치 및 vLLM OpenAI-compatible endpoint 연결
-**Acceptance Criteria**:
-- `smolagents[vllm] >= 1.11.0` 설치
-- vLLM OpenAI-compatible endpoint를 Smolagents `OpenAIServerModel`로 래핑
-- EXAONE 채팅 템플릿 호환성 검증
-- 단위 테스트 통과
-
-### [ ] Task 9.2: 4개 Tool 구현 (RAG, CivilAPI, 민원답변, 공문서생성)
-**Issue**: #416
-**Description**: Smolagents `@tool` 데코레이터 기반 4개 도구 구현
-**Acceptance Criteria**:
-- Tool 1: `search_similar_cases` (FAISS/BM25)
-- Tool 2: `search_civil_complaints` (행안부 API)
-- Tool 3: `generate_civil_reply` (adapter_civil LoRA)
-- Tool 4: `draft_public_document` (adapter_public_doc LoRA)
-- `@tool` 인터페이스 준수 (name, description, inputs, output_type)
-- 의존성: I-1 Task 1.3 완료 후 진행
-
-### [ ] Task 9.3: Tool-Calling 파이프라인 E2E 검증 및 프로토타입
-**Issue**: #417
-**Description**: Smolagents ToolCallingAgent + 4개 Tool 통합 E2E 검증
-**Acceptance Criteria**:
-- `src/agent/orchestrator.py`: Agent + Tool 레지스트리
-- FastAPI `/v1/agent/run` 엔드포인트
-- E2E 테스트 4건 통과
-- 응답 레이턴시 < 15초
-- 에러 핸들링
-
-### [ ] Task 9.4: LangGraph 전환 준비 (문서 작성)
-**Issue**: #418
-**Description**: Smolagents -> LangGraph 마이그레이션 가이드 작성
-**Acceptance Criteria**:
-- `docs/architecture/MIGRATION-smolagents-to-langgraph.md` 작성
-- Tool 및 Agent 아키텍처 전환 가이드
-- 예상 공수 및 리스크 분석
-
----
-
-## Workstream 10: 아키텍처 문서 동기화
-
-**Initiative**: I-10 (#407)
-**Milestone**: M3: 고도화 및 최적화
-**상태**: Documentation (병렬 진행 가능)
-
-### [x] Task 10.1: ADR-006 하이브리드 아키텍처 업데이트
-**Issue**: #410 (Note: 별도의 ADR 수정 이슈 미생성, 직접 ADR-006 파일 수정)
-**설명**: ADR-006에 Smolagents Phase 1 / LangGraph Phase 2 명시
-**완료**: 2026-04-01 완료
-- Discussion #403 링크 추가
-- Phase 1/2 구분 명시
-- Smolagents 경계 명확화
-- LoRA 레지스트리 포맷 정의
-
-### [x] Task 10.2: WORKFLOW 문서 Smolagents 구체화
-**Issue**: #411 (Note: 별도의 WORKFLOW 수정 이슈 미생성, 직접 WORKFLOW.md 파일 수정)
-**설명**: WORKFLOW v2.0으로 Smolagents 기반 재작성
-**완료**: 2026-04-01 완료
-- Actors: Smolagents Agent 추가
-- STEP 2~4: Smolagents 아키텍처 기반 재구성
-- TC-05~TC-07: 추가 테스트 시나리오
-- Prerequisites: smolagents[vllm] 명시
-
-### [x] Task 10.3: tasklist.md 동기화
-**설명**: 모든 Initiative와 Task를 GitHub 이슈와 동기화
-**완료**: 2026-04-01 완료 (현재 파일)
-
----
-
-## Dependency Graph
-
-```
-I-1 Task 1.3 (Multi-LoRA) ──┬──→ I-2 Task 2.1 (vLLM Multi-LoRA)
-                            ├──→ I-9 Task 9.2 (4개 Tool @tool)
-                            └──→ I-7 Task 7.1 (Docker)
-
-I-9 Task 9.1 ──→ I-2 Task 2.3 (Smolagents AgentExecutor)
-I-9 Task 9.2 ──→ I-3 Task 3.1~3.4 (Tool 구현)
-
-I-2 Task 2.3 ──→ I-3 Task 3.1 (민원분석 API Tool)
-I-2 Task 2.3 ──→ I-3 Task 3.2 (FAISS RAG Tool)
-
-I-5 (Design) ──→ I-6 (UI 구축)
-I-6 ──→ I-4 (Frontend Integration)
-
-I-1, I-2, I-3, I-4, I-5, I-6, I-7, I-9 ──→ I-8 (E2E Testing)
-```
-
----
-
-## Milestone 배치
-
-| Milestone | Initiative | 예상 소요 |
-|-----------|-----------|---------|
-| **M3**: 고도화 및 최적화 | I-1, I-2, I-3, I-4, I-5, I-6, I-7, I-9 | 8주 |
-| **M4**: 테스트 및 문서화 | I-8 | 3주 |
-| **M5**: 최종 납품 | I-10 (#375 AIOSS) | 1주 |
-
----
-
-## Status
-
-- [x] ADR-006 v2.0 (Smolagents Phase 1/2 명시)
-- [x] WORKFLOW v2.0 (Smolagents 구체화)
-- [x] tasklist.md (모든 Workstream 동기화)
-- [x] GitHub 이슈 트리 구조 (11개 Task 이슈 생성)
-- [ ] Implementation (2026-04-01 시작 예정)
+- 현재 코드베이스는 `runtime/API/search` 출하 준비도가 높다.
+- 현재 GitHub 이슈 구조는 `agentic framework`와 `UI 고도화`가 섞여 있어 우선순위가 흐려져 있다.
+- 따라서 첫 릴리즈는 `GovOn Agentic Shell`로 고정하고, shell-first + agentic-first 기준으로 issue 해석과 구현 순서를 재배치한다.
