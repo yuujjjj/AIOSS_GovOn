@@ -157,7 +157,7 @@ class TestPathConfig:
     def test_defaults(self):
         with patch.dict(os.environ, {}, clear=True):
             pc = PathConfig.from_env()
-        assert pc.data_path == "data/processed/v2_train.jsonl"
+        assert pc.data_path == ""
         assert pc.index_path == "models/faiss_index/complaints.index"
 
     def test_env_override(self):

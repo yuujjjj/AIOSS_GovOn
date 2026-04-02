@@ -270,14 +270,6 @@ class TestHealthShiftLeft:
         assert "hybrid_search_enabled" in body
         assert isinstance(body["hybrid_search_enabled"], bool)
 
-    def test_health_pii_masking_enabled_field(self, client):
-        """응답에 pii_masking_enabled 필드가 포함된다."""
-        resp = client.get("/health")
-        assert resp.status_code == 200
-        body = resp.json()
-        assert "pii_masking_enabled" in body
-        assert isinstance(body["pii_masking_enabled"], bool)
-
     def test_health_rag_enabled_with_retriever_only(self, client):
         """index_manager=None이지만 retriever가 있으면 rag_enabled=True."""
         original_im = getattr(manager, "index_manager", None)
@@ -751,7 +743,6 @@ def client_with_hybrid_engine(client_with_index):
     from src.inference.hybrid_search import SearchMode
 
     original_hybrid = getattr(manager, "hybrid_engine", None)
-    original_pii = getattr(manager, "pii_masker", None)
 
     mock_hybrid = MagicMock()
     now = datetime.now(timezone.utc).isoformat()
@@ -781,12 +772,10 @@ def client_with_hybrid_engine(client_with_index):
 
     mock_hybrid.search = AsyncMock(side_effect=_search)
     manager.hybrid_engine = mock_hybrid
-    manager.pii_masker = None  # PII 마스킹 비활성화
 
     yield client_with_index
 
     manager.hybrid_engine = original_hybrid
-    manager.pii_masker = original_pii
 
 
 class TestSearchShiftLeft:
@@ -1068,7 +1057,6 @@ class TestSearchShiftLeft:
         """hybrid_engine=None이고 retriever가 있으면 레거시 폴백으로 검색한다."""
         original_hybrid = getattr(manager, "hybrid_engine", None)
         original_retriever = getattr(manager, "retriever", None)
-        original_pii = getattr(manager, "pii_masker", None)
 
         manager.hybrid_engine = None
         manager.retriever = MagicMock()
@@ -1083,7 +1071,6 @@ class TestSearchShiftLeft:
                 },
             ]
         )
-        manager.pii_masker = None
 
         try:
             payload = {
@@ -1100,7 +1087,6 @@ class TestSearchShiftLeft:
         finally:
             manager.hybrid_engine = original_hybrid
             manager.retriever = original_retriever
-            manager.pii_masker = original_pii
 
     def test_search_query_max_length_2000(self, client_with_hybrid_engine):
         """query 최대 길이 2000이 허용된다."""

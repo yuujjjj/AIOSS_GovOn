@@ -7,7 +7,6 @@
 - 에러 코드 체계
 - 메타데이터 (request_id, timestamp, latency_ms)
 - thought 블록 제거
-- PII 마스킹 통합
 """
 
 import time
@@ -118,26 +117,6 @@ class TestThoughtBlockRemoval:
         raw = "<think>추론</think>  \n  답변"
         cleaned = formatter.clean_response(raw)
         assert cleaned == "답변"
-
-
-class TestPIIMasking:
-    """PII 마스킹 통합."""
-
-    def test_masks_phone_number(self, formatter: ResponseFormatter):
-        text = "연락처는 010-1234-5678 입니다."
-        masked = formatter.mask_pii(text)
-        assert "010-1234-5678" not in masked
-        assert "***" in masked
-
-    def test_masks_email(self, formatter: ResponseFormatter):
-        text = "이메일은 test@example.com 입니다."
-        masked = formatter.mask_pii(text)
-        assert "test@example.com" not in masked
-
-    def test_no_pii_unchanged(self, formatter: ResponseFormatter):
-        text = "PII가 없는 일반 텍스트입니다."
-        masked = formatter.mask_pii(text)
-        assert masked == "PII가 없는 일반 텍스트입니다."
 
 
 class TestStandardResponseSerialization:

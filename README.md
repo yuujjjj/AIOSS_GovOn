@@ -8,7 +8,7 @@
 [![Docs Portal](https://img.shields.io/badge/Docs-Portal-blue?logo=readthedocs)](https://govon-org.github.io/GovOn/)
 [![Public Roadmap](https://img.shields.io/badge/📍_Public_Roadmap-Initiatives-7C3AED)](https://github.com/GovOn-Org/GovOn/issues?q=label%3A%22🎯+Initiative%22+sort%3Aupdated-desc)
 
-EXAONE-Deep-7.8B 모델을 QLoRA 파인튜닝 및 AWQ 양자화하여, 폐쇄망 환경에서 클라우드 없이 민원을 분석하고 처리하는 온디바이스 AI 시스템이다.
+폐쇄망 환경에서 클라우드 없이 민원을 분석하고 처리하는 온프레미스 AI 런타임이다.
 
 ---
 
@@ -58,7 +58,7 @@ Roadmap는 **Initiative 계층만** 표시한다. 세부 task는 각 initiative 
 
 ## 핵심 기능
 
-- **온디바이스 LLM 추론** -- AWQ 양자화(14.56GB → 4.94GB)로 단일 GPU에서 vLLM 기반 실시간 서빙
+- **온디바이스 LLM 추론** -- 단일 GPU 환경에서 vLLM 기반 실시간 서빙
 - **RAG 하이브리드 검색** -- FAISS + BM25로 유사 민원(판례/법령/매뉴얼/공지) 검색 후 컨텍스트 기반 응답 생성
 - **보안 설계** -- API Key 인증, Rate Limiting, Prompt Injection 방어, CORS 제어
 - **CI/CD 자동화** -- GitHub Actions 4단계 파이프라인, DORA 메트릭 대시보드, 보안 스캔
@@ -101,9 +101,7 @@ graph TB
 
 | 영역 | 기술 |
 |------|------|
-| **AI 모델** | EXAONE-Deep-7.8B (LG AI Research) |
-| **파인튜닝** | QLoRA (PEFT, SFTTrainer, WandB) |
-| **양자화** | AWQ INT4 (AutoAWQ) |
+| **AI 모델** | EXAONE 계열 추론 모델 |
 | **LLM 서빙** | vLLM (PagedAttention) |
 | **오케스트레이션** | LangGraph 기반 decision runtime |
 | **임베딩** | multilingual-e5-large (1024차원) |
@@ -123,7 +121,7 @@ graph TB
 cp .env.example .env
 
 # 볼륨 디렉토리 생성
-mkdir -p models/faiss_index models/bm25_index data/processed agents configs logs .cache
+mkdir -p models/faiss_index models/bm25_index agents configs logs .cache
 
 # 로컬 소스에서 이미지 빌드 후 실행
 docker compose up -d --build
@@ -162,9 +160,6 @@ pytest tests/ -v --cov=src --cov-report=term-missing
 ```
 GovOn/
 ├── src/
-│   ├── data_collection_preprocessing/   # AI Hub 수집 → PII 마스킹 → EXAONE 형식 변환
-│   ├── training/                        # QLoRA 파인튜닝 (SFTTrainer, WandB 연동)
-│   ├── quantization/                    # AWQ 양자화 (W4A16g128), LoRA 병합
 │   ├── inference/                       # FastAPI 서빙 (핵심 모듈)
 │   │   ├── api_server.py               # vLLMEngineManager, 엔드포인트, 보안 미들웨어
 │   │   ├── retriever.py                # FAISS IndexFlatIP + multilingual-e5-large 임베딩
@@ -172,7 +167,6 @@ GovOn/
 │   │   ├── schemas.py                  # Pydantic 요청/응답 모델
 │   │   ├── vllm_stabilizer.py          # EXAONE용 transformers 런타임 패치
 │   │   └── db/                         # SQLAlchemy ORM, Alembic 마이그레이션
-│   └── evaluation/                     # 모델 평가 스크립트
 ├── agents/                              # 에이전트 설정
 ├── configs/                             # 시스템 설정 파일
 ├── tests/                               # 테스트 코드

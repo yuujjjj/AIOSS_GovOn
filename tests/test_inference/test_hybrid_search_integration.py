@@ -139,7 +139,7 @@ def _write_jsonl(path: str, records: list) -> None:
 @pytest.fixture
 def input_output_jsonl(tmp_path) -> str:
     """input/output 형식 JSONL 파일 경로를 반환한다."""
-    path = str(tmp_path / "civil_complaint_train.jsonl")
+    path = str(tmp_path / "sample_input_output.jsonl")
     _write_jsonl(path, _INPUT_OUTPUT_SAMPLES)
     return path
 
@@ -147,7 +147,7 @@ def input_output_jsonl(tmp_path) -> str:
 @pytest.fixture
 def exaone_template_jsonl(tmp_path) -> str:
     """EXAONE template 형식 JSONL 파일 경로를 반환한다."""
-    path = str(tmp_path / "v2_train.jsonl")
+    path = str(tmp_path / "sample_template.jsonl")
     _write_jsonl(path, _EXAONE_TEMPLATE_SAMPLES)
     return path
 

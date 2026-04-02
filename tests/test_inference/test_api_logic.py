@@ -46,8 +46,6 @@ def mock_manager():
         ]
         mock.agent_manager.get_agent.return_value = MagicMock()
         mock.index_manager = MagicMock()
-        mock.pii_masker = MagicMock()
-        mock.pii_masker.mask_all.side_effect = lambda x: x  # 마스킹 로직 패스
         # hybrid_engine.search는 비동기 함수이므로 AsyncMock 사용
         mock.hybrid_engine.search = AsyncMock()
         yield mock

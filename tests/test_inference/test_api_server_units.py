@@ -40,7 +40,6 @@ if "torch" not in sys.modules:
 with patch("src.inference.vllm_stabilizer.apply_transformers_patch"):
     from src.inference.api_server import (
         _extract_content_by_type,
-        _mask_search_results,
         _rate_limit,
         get_feature_flags,
         manager,
@@ -285,59 +284,6 @@ class TestExtractContentByType:
         result_dict = {"title": "법령", "extras": {"content": "일반 내용"}}
         content = _extract_content_by_type(result_dict, IndexType.LAW)
         assert content == "일반 내용"
-
-
-# ---------------------------------------------------------------------------
-# _mask_search_results 테스트
-# ---------------------------------------------------------------------------
-
-
-class TestMaskSearchResults:
-    def _make_result(self, content="내용", metadata=None):
-        return SearchResult(
-            doc_id="d1",
-            source_type=IndexType.CASE,
-            title="제목",
-            content=content,
-            score=0.9,
-            reliability_score=1.0,
-            metadata=metadata or {},
-        )
-
-    def test_no_masker_returns_unmodified(self):
-        """masker가 None이면 결과를 그대로 반환한다."""
-        results = [self._make_result(content="홍길동 010-1234-5678")]
-        masked = _mask_search_results(results, None)
-        assert masked[0].content == "홍길동 010-1234-5678"
-
-    def test_masks_content(self):
-        """masker가 있으면 content를 마스킹한다."""
-        masker = MagicMock()
-        masker.mask_all.side_effect = lambda x: x.replace("홍길동", "***")
-
-        results = [self._make_result(content="홍길동의 민원")]
-        masked = _mask_search_results(results, masker)
-        assert masked[0].content == "***의 민원"
-
-    def test_masks_metadata_fields(self):
-        """metadata 내 텍스트 필드도 마스킹한다."""
-        masker = MagicMock()
-        masker.mask_all.side_effect = lambda x: x.replace("개인정보", "***")
-
-        results = [
-            self._make_result(
-                content="일반 내용",
-                metadata={"complaint_text": "개인정보 포함", "answer_text": "개인정보 답변"},
-            )
-        ]
-        masked = _mask_search_results(results, masker)
-        assert masked[0].metadata["complaint_text"] == "*** 포함"
-        assert masked[0].metadata["answer_text"] == "*** 답변"
-
-    def test_empty_results(self):
-        """빈 결과 리스트는 빈 리스트를 반환한다."""
-        masker = MagicMock()
-        assert _mask_search_results([], masker) == []
 
 
 # ---------------------------------------------------------------------------
