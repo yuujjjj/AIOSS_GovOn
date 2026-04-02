@@ -527,9 +527,4 @@ graph TB
 
 ## 관련 문서
 
-- [시작하기](../guide/getting-started.md) -- Docker 기반 실행, 환경 변수 설정
-- [보안 정책](../guide/security.md) -- 온프레미스 보안 이점, 네트워크 격리
-- [트러블슈팅](../guide/troubleshooting.md) -- Docker 네트워킹, GPU 인식 문제
-- [온라인 배포](online.md) -- 온라인 환경 배포 절차 상세
-- [오프라인 배포](offline.md) -- 폐���망 배포 절차 상세
-- [Docker 가이드](docker.md) -- Docker 이미지 빌드, 컨테이너 관리
+- [개발 규칙](../guide/development.md) -- 저장소 작업 규칙과 기본 개발 흐름

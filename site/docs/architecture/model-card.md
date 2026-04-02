@@ -349,11 +349,5 @@ graph LR
 
 ## 관련 문서
 
-- [시스템 구성도](overview.md) -- 전체 아키텍처 개요
-- [API 명세](api.md) -- 추론 서버 REST API 레퍼런스
-- [파인튜닝](../research/finetuning.md) -- QLoRA 실험 상세
-- [양자화](../research/quantization.md) -- AWQ 양자화 과정
-- [평가 결과](../research/evaluation.md) -- 모델 평가 지표
-- [W&B 실험 로그](../research/wandb.md) -- 실험 추적 기록
 - [ADR-001: EXAONE 모델 선정](adr/index.md#adr-001-exaone-deep-78b-모델-선정) -- 모델 선정 근거
 - [ADR-002: AWQ 양자화](adr/index.md#adr-002-awq-w4a16g128-양자화-방식-선정) -- 양자화 방식 선정 근거

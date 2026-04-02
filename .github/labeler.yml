@@ -4,15 +4,9 @@
 ai-model:
   - changed-files:
     - any-glob-to-any-file:
-      - "src/training/**"
-      - "src/evaluation/**"
       - "src/inference/**"
-      - "src/quantization/**"
       - "src/utils/**"
-      - "training/**"
-      - "evaluation/**"
       - "inference/**"
-      - "quantization/**"
       - "models/**"
       - "notebooks/**"
       - "configs/**"
@@ -48,8 +42,6 @@ data:
   - changed-files:
     - any-glob-to-any-file:
       - "data/**"
-      - "src/data_collection_preprocessing/**"
-      - "data_collection_preprocessing/**"
       - "src/preprocessing/**"
       - "preprocessing/**"
       - "**/*.csv"
@@ -60,9 +52,7 @@ preprocessing:
   - changed-files:
     - any-glob-to-any-file:
       - "src/preprocessing/**"
-      - "src/data_collection_preprocessing/**"
       - "preprocessing/**"
-      - "data_collection_preprocessing/**"
 
 infra:
   - changed-files:

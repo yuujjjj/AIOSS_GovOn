@@ -141,7 +141,6 @@ class vLLMEngineManager:
         self.bm25_indexers: dict = {}
         self.embed_model = None
         self.feature_flags: FeatureFlags = FeatureFlags.from_env()
-        self.pii_masker = None
         self.session_store: SessionStore = SessionStore()
         self.agent_loop: Optional[AgentLoop] = None
         self.langgraph_runtime: Optional[Any] = None
@@ -238,17 +237,7 @@ class vLLMEngineManager:
         else:
             logger.warning("HybridSearchEngine 미초기화: index_manager 또는 embed_model 없음")
 
-        # 6. Initialize PII Masker (검색 결과 개인정보 마스킹용)
-        try:
-            from src.data_collection_preprocessing.pii_masking import PIIMasker
-
-            self.pii_masker = PIIMasker.create_strict_masker()
-            logger.info("PIIMasker 초기화 완료 (검색 결과 PII 마스킹 활성)")
-        except Exception as e:
-            logger.warning(f"PIIMasker 초기화 실패 — 검색 결과 PII 마스킹이 비활성화됩니다: {e}")
-            self.pii_masker = None
-
-        # 7. Initialize Agent Loop (세션 기반 에이전트 루프)
+        # 6. Initialize Agent Loop (세션 기반 에이전트 루프)
         self._init_agent_loop()
         logger.info("AgentLoop 초기화 완료")
 
@@ -431,7 +420,7 @@ class vLLMEngineManager:
                     )
                 )
 
-        return _mask_search_results(collected, self.pii_masker)
+        return collected
 
     async def _prepare_public_doc_generation(
         self,
@@ -845,7 +834,6 @@ async def health():
         "indexes": index_summary,
         "bm25_indexes": bm25_summary,
         "hybrid_search_enabled": manager.hybrid_engine is not None,
-        "pii_masking_enabled": manager.pii_masker is not None,
         "feature_flags": {
             "use_rag_pipeline": manager.feature_flags.use_rag_pipeline,
             "model_version": manager.feature_flags.model_version,
@@ -1072,21 +1060,6 @@ def _extract_content_by_type(result: dict, index_type: IndexType) -> str:
     return text or result.get("title", "")
 
 
-def _mask_search_results(
-    results: List[SearchResult], masker: Optional[object]
-) -> List[SearchResult]:
-    """검색 결과 내 PII(개인식별정보)를 마스킹한다."""
-    if masker is None:
-        return results
-    for r in results:
-        r.content = masker.mask_all(r.content)
-        # metadata 내 텍스트 필드도 마스킹
-        for key in ("complaint_text", "answer_text", "complaint", "answer"):
-            if key in r.metadata and isinstance(r.metadata[key], str):
-                r.metadata[key] = masker.mask_all(r.metadata[key])
-    return results
-
-
 # --- S-1: /search 엔드포인트 ---
 # NOTE: slowapi는 경로별 별도 버킷으로 rate limit을 추적합니다.
 # /v1/search와 /search 각각 60/minute으로 제한됩니다.
@@ -1139,9 +1112,6 @@ async def search(request: SearchRequest, req: Request, _: None = Depends(verify_
                 status_code=503,
                 detail="검색 엔진이 아직 초기화되지 않았습니다.",
             )
-
-        # PII 마스킹: 검색 결과 내 개인정보를 마스킹하여 반환
-        results = _mask_search_results(results, manager.pii_masker)
 
         elapsed_ms = (time.monotonic() - start_time) * 1000
         # 폴백이 발생한 경우에만 actual_search_mode를 설정

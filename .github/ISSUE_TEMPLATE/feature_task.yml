@@ -55,8 +55,8 @@ body:
       label: "산출물"
       description: "작업 결과로 생성되는 파일, 문서, 모델 등을 작성해 주세요."
       placeholder: |
-        - src/training/train_qlora.py
-        - docs/outputs/M2_MVP/...
+        - src/inference/api_server.py
+        - docs/outputs/...
     validations:
       required: false
 

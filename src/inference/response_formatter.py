@@ -4,7 +4,6 @@
 - 에러 코드 체계
 - 응답 메타데이터 (request_id, timestamp, latency_ms)
 - thought 블록 제거
-- PII 마스킹 통합
 """
 
 import re
@@ -77,11 +76,6 @@ class StandardResponse:
 # thought 블록 정규식 (단일 라인 + 멀티 라인)
 _THINK_PATTERN = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
 
-# PII 패턴
-_PHONE_PATTERN = re.compile(r"\d{2,3}-\d{3,4}-\d{4}")
-_EMAIL_PATTERN = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
-
-
 class ResponseFormatter:
     """응답 포맷 표준화기."""
 
@@ -126,9 +120,3 @@ class ResponseFormatter:
         """thought 블록을 제거하고 응답을 정리한다."""
         cleaned = _THINK_PATTERN.sub("", raw_text)
         return cleaned.strip()
-
-    def mask_pii(self, text: str) -> str:
-        """PII 패턴을 마스킹한다."""
-        masked = _PHONE_PATTERN.sub("***-****-****", text)
-        masked = _EMAIL_PATTERN.sub("***@***.***", masked)
-        return masked

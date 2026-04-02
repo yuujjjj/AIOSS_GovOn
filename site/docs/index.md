@@ -88,7 +88,7 @@ graph TB
     G --> I & J & K & L
 ```
 
-[:octicons-arrow-right-24: 상세 아키텍처 보기](architecture/overview.md)
+[:octicons-arrow-right-24: 상세 아키텍처 보기](architecture/adr/index.md)
 
 ---
 
@@ -156,25 +156,17 @@ graph TB
 
     ---
 
-    시스템 구성도, ADR, API 명세, 모델 카드
+    ADR과 모델 카드
 
-    [:octicons-arrow-right-24: 아키텍처 보기](architecture/overview.md)
-
--   :material-flask:{ .lg .middle } **연구 & 실험**
-
-    ---
-
-    모델 분석, 파인튜닝, 양자화, 평가 결과
-
-    [:octicons-arrow-right-24: 연구 결과 보기](research/model-analysis.md)
+    [:octicons-arrow-right-24: 아키텍처 보기](architecture/adr/index.md)
 
 -   :material-book-open-variant:{ .lg .middle } **개발 가이드**
 
     ---
 
-    시작하기, 개발 규칙, 트러블슈팅
+    개발 규칙
 
-    [:octicons-arrow-right-24: 가이드 보기](guide/getting-started.md)
+    [:octicons-arrow-right-24: 가이드 보기](guide/development.md)
 
 -   :material-pipe:{ .lg .middle } **CI/CD**
 
@@ -188,9 +180,9 @@ graph TB
 
     ---
 
-    Docker, 온라인/오프라인 배포 가이드
+    인프라 아키텍처
 
-    [:octicons-arrow-right-24: 배포 가이드 보기](deployment/docker.md)
+    [:octicons-arrow-right-24: 배포 가이드 보기](deployment/architecture.md)
 
 -   :material-flag:{ .lg .middle } **마일스톤**
 

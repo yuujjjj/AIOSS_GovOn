@@ -6,18 +6,8 @@
 # 전체 기본 리뷰어
 * @umyunsang
 
-# 모델 학습 관련 (모델팀)
-/src/training/           @umyunsang
-/src/quantization/       @umyunsang
-
 # 서빙 및 추론 관련 (서빙팀)
 /src/inference/          @umyunsang
-
-# 데이터 파이프라인
-/src/data_collection_preprocessing/  @umyunsang
-
-# 평가 스크립트
-/src/evaluation/         @umyunsang
 
 # 에이전트 페르소나 정의
 /agents/                 @umyunsang

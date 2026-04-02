@@ -182,7 +182,7 @@ class PathConfig:
     def from_env(cls) -> "PathConfig":
         project_root = str(_PROJECT_ROOT)
         return cls(
-            data_path=os.getenv("DATA_PATH", "data/processed/v2_train.jsonl"),
+            data_path=os.getenv("DATA_PATH", ""),
             index_path=os.getenv("INDEX_PATH", "models/faiss_index/complaints.index"),
             faiss_index_dir=os.getenv("FAISS_INDEX_DIR", "models/faiss_index"),
             bm25_index_dir=os.getenv("BM25_INDEX_DIR", "models/bm25_index"),
