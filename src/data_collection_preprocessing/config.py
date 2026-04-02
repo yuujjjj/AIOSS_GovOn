@@ -4,11 +4,12 @@ Configuration Module for Data Collection and Preprocessing
 Manages environment variables, API keys, and pipeline configurations.
 """
 
-import os
 import logging
-from pathlib import Path
+import os
 from dataclasses import dataclass, field
-from typing import Optional, List, Dict
+from pathlib import Path
+from typing import Dict, List, Optional
+
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -44,6 +45,36 @@ class AIHubConfig:
         default_factory=lambda: os.getenv(
             "AIHUB_DOWNLOAD_DIR",
             str(Path(__file__).parent.parent.parent / "data" / "raw" / "aihub"),
+        )
+    )
+
+
+@dataclass
+class PublicDocumentConfig:
+    """행안부 공공문서 API Configuration"""
+
+    api_key: str = field(default_factory=lambda: os.getenv("DATA_GO_KR_API_KEY", ""))
+    base_url: str = "http://apis.data.go.kr/1741000/publicDoc"
+    categories: Dict[str, str] = field(
+        default_factory=lambda: {
+            "press": "getDocPress",
+            "speech": "getDocSpeech",
+            "publication": "getDocPublication",
+            "report": "getDocReport",
+            "plan": "getDocPlan",
+            "all": "getDocAll",
+        }
+    )
+    num_of_rows: int = 100
+    max_pages_per_category: int = 50
+    requests_per_second: float = 20.0
+    max_retries: int = 3
+    retry_backoff_base: float = 2.0
+    timeout: float = 30.0
+    response_format: str = "json"
+    output_dir: str = field(
+        default_factory=lambda: str(
+            Path(__file__).parent.parent.parent / "data" / "raw" / "public_docs"
         )
     )
 
@@ -121,6 +152,7 @@ class Config:
     aihub: AIHubConfig = field(default_factory=AIHubConfig)
     preprocessing: PreprocessingConfig = field(default_factory=PreprocessingConfig)
     calibration: CalibrationConfig = field(default_factory=CalibrationConfig)
+    public_doc: PublicDocumentConfig = field(default_factory=PublicDocumentConfig)
 
     # General settings
     project_root: Path = field(default_factory=lambda: Path(__file__).parent.parent.parent)
@@ -139,6 +171,7 @@ class Config:
             self.aihub.download_dir,
             self.preprocessing.processed_dir,
             self.calibration.output_path,
+            self.public_doc.output_dir,
         ]
 
         for dir_path in directories:
@@ -164,6 +197,7 @@ class Config:
         """Check which API keys are configured"""
         return {
             "aihub": bool(self.aihub.api_key),
+            "public_doc": bool(self.public_doc.api_key),
         }
 
     @classmethod

@@ -30,6 +30,7 @@ from typing import Any, Dict, List, Optional
 
 from .aihub_collector import AIHubCollector, create_mock_dataset
 from .calibration_dataset import CalibrationDatasetGenerator
+from .collect_public_docs import CollectionResult, PublicDocumentCollector
 from .config import Config, get_config
 from .data_preprocessor import DataPreprocessor, ProcessedRecord
 from .pii_masking import PIIMasker
@@ -86,6 +87,7 @@ class DataPipeline:
         self.pii_masker = PIIMasker.create_strict_masker()
         self.preprocessor = DataPreprocessor(self.config.preprocessing, self.pii_masker)
         self.calibration_generator = CalibrationDatasetGenerator(self.config.calibration)
+        self.public_doc_collector = PublicDocumentCollector(self.config.public_doc)
 
         # Pipeline state
         self.raw_data: List[Dict[str, Any]] = []
@@ -137,9 +139,64 @@ class DataPipeline:
         logger.info(f"Total AI Hub records collected: {len(collected_data)}")
         return collected_data
 
+    def collect_from_public_docs(
+        self,
+        use_mock: bool = False,
+        min_docs: int = 1000,
+    ) -> List[Dict[str, Any]]:
+        """
+        행안부 공공문서 API에서 학습 데이터를 수집한다.
+
+        Args:
+            use_mock: True이면 빈 목록 반환 (실제 API 미호출)
+            min_docs: 최소 수집 목표 건수
+
+        Returns:
+            List of raw data records with _source="public_doc"
+        """
+        import asyncio
+
+        logger.info("행안부 공공문서 API 수집 시작...")
+
+        if use_mock:
+            logger.info("mock 모드 — 공공문서 수집 건너뜀")
+            return []
+
+        if not self.config.public_doc.api_key:
+            logger.warning(
+                "DATA_GO_KR_API_KEY 환경변수가 설정되지 않았습니다. 공공문서 수집 건너뜀."
+            )
+            return []
+
+        result: CollectionResult = asyncio.run(
+            self.public_doc_collector.collect_all(min_docs=min_docs)
+        )
+
+        if not result.success:
+            logger.warning(f"공공문서 수집 실패: {result.errors}")
+            return []
+
+        # JSONL 파일에서 레코드 로드
+        if not result.output_path:
+            return []
+
+        records: List[Dict[str, Any]] = []
+        try:
+            with open(result.output_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        records.append(json.loads(line))
+        except Exception as exc:
+            logger.error(f"공공문서 JSONL 로드 실패: {exc}")
+            return []
+
+        logger.info(f"공공문서 수집 완료: {len(records)}건")
+        return records
+
     def collect_all(self, use_mock: bool = False, mock_samples: int = 100) -> List[Dict[str, Any]]:
         """
-        Collect data from all sources (AI Hub).
+        Collect data from all sources (AI Hub + 공공문서).
 
         Args:
             use_mock: Use mock data for testing
@@ -153,9 +210,18 @@ class DataPipeline:
         for record in aihub_data:
             record["_source"] = "aihub"
 
-        self.raw_data = aihub_data
-        logger.info(f"Total records collected: {len(aihub_data)}")
-        return aihub_data
+        # Collect from 공공문서 API
+        public_doc_data = self.collect_from_public_docs(use_mock=use_mock)
+        for record in public_doc_data:
+            record["_source"] = "public_doc"
+
+        combined = aihub_data + public_doc_data
+        self.raw_data = combined
+        logger.info(
+            f"Total records collected: {len(combined)} "
+            f"(aihub={len(aihub_data)}, public_doc={len(public_doc_data)})"
+        )
+        return combined
 
     def preprocess(self, raw_data: Optional[List[Dict[str, Any]]] = None) -> List[ProcessedRecord]:
         """
@@ -669,9 +735,12 @@ Examples:
 
     parser.add_argument(
         "--mode",
-        choices=["full", "collect", "preprocess", "bm25"],
+        choices=["full", "collect", "preprocess", "bm25", "collect-public-docs"],
         default="full",
-        help="Pipeline mode: full (collect + preprocess), collect only, or preprocess only",
+        help=(
+            "Pipeline mode: full (collect + preprocess), collect only, preprocess only, "
+            "bm25 only, or collect-public-docs only"
+        ),
     )
 
     parser.add_argument("--mock", action="store_true", help="Use mock data for testing")
@@ -731,6 +800,42 @@ Examples:
             data_dir=args.input,
             output_dir=args.bm25_output,
         )
+
+    elif args.mode == "collect-public-docs":
+        import asyncio
+
+        start_time = datetime.now()
+        _result = PipelineResult(
+            success=False,
+            mode="collect-public-docs",
+            start_time=start_time.isoformat(),
+            end_time="",
+            duration_seconds=0,
+        )
+        try:
+            pub_data = pipeline.collect_from_public_docs(
+                use_mock=args.mock,
+                min_docs=args.mock_samples if args.mock else 1000,
+            )
+            _result.total_raw_records = len(pub_data)
+            if pub_data:
+                raw_path = (
+                    Path(pipeline.config.public_doc.output_dir).parent / "public_doc_raw.jsonl"
+                )
+                raw_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(raw_path, "w", encoding="utf-8") as f:
+                    for rec in pub_data:
+                        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+                _result.output_files["public_doc_raw"] = str(raw_path)
+            _result.success = len(pub_data) > 0
+        except Exception as exc:
+            logger.error(f"collect-public-docs 실패: {exc}")
+            _result.errors.append(str(exc))
+        finally:
+            end_time = datetime.now()
+            _result.end_time = end_time.isoformat()
+            _result.duration_seconds = (end_time - start_time).total_seconds()
+        result = _result
 
     # Print summary
     print("\n" + "=" * 60)
