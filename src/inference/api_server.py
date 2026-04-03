@@ -138,7 +138,9 @@ class vLLMEngineManager:
         self.session_store = SessionStore()
         self.agent_manager = AgentManager(AGENTS_DIR)
         self.agent_loop: Optional[AgentLoop] = None
+        self.graph = None  # LangGraph CompiledGraph (v2 엔드포인트용)
         self._init_agent_loop()
+        self._init_graph()
 
     async def initialize(self):
         if SKIP_MODEL_LOAD:
@@ -188,9 +190,7 @@ class vLLMEngineManager:
                     indexer = BM25Indexer()
                     indexer.load(bm25_path)
                     self.bm25_indexers[idx_type] = indexer
-                    logger.info(
-                        f"BM25 인덱스 로드 완료: {idx_type.value} ({indexer.doc_count}건)"
-                    )
+                    logger.info(f"BM25 인덱스 로드 완료: {idx_type.value} ({indexer.doc_count}건)")
                 except Exception as exc:
                     logger.warning(f"BM25 인덱스 로드 실패 ({idx_type.value}): {exc}")
 
@@ -282,7 +282,9 @@ class vLLMEngineManager:
             if result.source_type != IndexType.CASE:
                 continue
             metadata = result.metadata or {}
-            complaint = metadata.get("complaint_text") or metadata.get("complaint") or result.content
+            complaint = (
+                metadata.get("complaint_text") or metadata.get("complaint") or result.content
+            )
             answer = metadata.get("answer_text") or metadata.get("answer") or result.content
             retrieved_cases.append(
                 {
@@ -312,7 +314,9 @@ class vLLMEngineManager:
         if turns and turns[-1].role == "user" and turns[-1].content == current_query:
             turns = turns[:-1]
 
-        previous_user = next((turn.content for turn in reversed(turns) if turn.role == "user"), None)
+        previous_user = next(
+            (turn.content for turn in reversed(turns) if turn.role == "user"), None
+        )
         previous_assistant = next(
             (turn.content for turn in reversed(turns) if turn.role == "assistant"),
             None,
@@ -431,7 +435,9 @@ class vLLMEngineManager:
             )
 
         if len(lines) == 1:
-            lines.append("- 내부 검색 결과를 충분히 확보하지 못해 일반 행정 응대 원칙 기준으로 작성했습니다.")
+            lines.append(
+                "- 내부 검색 결과를 충분히 확보하지 못해 일반 행정 응대 원칙 기준으로 작성했습니다."
+            )
 
         return "\n".join(lines)
 
@@ -642,7 +648,9 @@ class vLLMEngineManager:
 
             external_cases = []
             for item in api_lookup_data.get("results", [])[:3]:
-                complaint = item.get("content") or item.get("qnaContent") or item.get("question", "")
+                complaint = (
+                    item.get("content") or item.get("qnaContent") or item.get("question", "")
+                )
                 answer = item.get("answer") or item.get("qnaAnswer") or item.get("title", "")
                 if complaint or answer:
                     external_cases.append(
@@ -660,10 +668,12 @@ class vLLMEngineManager:
                 use_rag=True,
             )
             request_id = str(uuid.uuid4())
-            final_output, retrieved_cases, search_results = await engine_ref.generate_civil_response(
-                gen_request,
-                request_id,
-                external_cases=external_cases,
+            final_output, retrieved_cases, search_results = (
+                await engine_ref.generate_civil_response(
+                    gen_request,
+                    request_id,
+                    external_cases=external_cases,
+                )
             )
             if final_output is None:
                 return {"text": "", "error": "민원 답변 생성 실패"}
@@ -703,6 +713,56 @@ class vLLMEngineManager:
             ToolType.APPEND_EVIDENCE: _append_evidence_tool,
         }
         self.agent_loop = AgentLoop(tool_registry=tool_registry)
+
+    def _build_tool_registry(self) -> Dict[str, Any]:
+        """tool registry를 str key dict로 반환한다.
+
+        기존 _init_agent_loop에서 정의한 tool 함수들을
+        str 키(ToolType.value)로 매핑하여 반환한다.
+        RegistryExecutorAdapter에서 사용한다.
+        """
+        if self.agent_loop is None:
+            return {}
+        # AgentLoop의 tool_registry는 ToolType -> callable 매핑이므로
+        # str key로 변환한다
+        return {
+            str(k.value if hasattr(k, "value") else k): v for k, v in self.agent_loop._tools.items()
+        }
+
+    def _init_graph(self) -> None:
+        """LangGraph StateGraph를 초기화한다.
+
+        MVP에서는 RegexPlannerAdapter(정규식 기반 fallback)와
+        RegistryExecutorAdapter(기존 tool_registry 재사용)를 사용한다.
+        checkpoint는 MemorySaver를 기본으로 사용하며,
+        GOVON_HOME 환경변수로 AsyncSqliteSaver 경로를 설정할 수 있다.
+        """
+        try:
+            from src.inference.graph.builder import build_govon_graph
+            from src.inference.graph.executor_adapter import RegistryExecutorAdapter
+            from src.inference.graph.planner_adapter import RegexPlannerAdapter
+        except ImportError as exc:
+            logger.warning(f"LangGraph graph 초기화 실패 (import 오류): {exc}")
+            return
+
+        tool_registry = self._build_tool_registry()
+        planner = RegexPlannerAdapter()
+        executor = RegistryExecutorAdapter(
+            tool_registry=tool_registry,
+            session_store=self.session_store,
+        )
+
+        # MVP: MemorySaver 사용 (AsyncSqliteSaver는 async context manager가 필요하므로
+        # daemon startup의 lifespan event에서 별도 처리)
+        checkpointer = None
+
+        self.graph = build_govon_graph(
+            planner_adapter=planner,
+            executor_adapter=executor,
+            session_store=self.session_store,
+            checkpointer=checkpointer,
+        )
+        logger.info("LangGraph graph 초기화 완료")
 
 
 manager = vLLMEngineManager()
@@ -990,7 +1050,11 @@ async def agent_run(
     for result in trace.tool_results:
         if tool_name(result.tool) == ToolType.RAG_SEARCH.value and result.success:
             search_results = result.data.get("results")
-        elif tool_name(result.tool) == ToolType.API_LOOKUP.value and result.success and not search_results:
+        elif (
+            tool_name(result.tool) == ToolType.API_LOOKUP.value
+            and result.success
+            and not search_results
+        ):
             search_results = result.data.get("results")
 
     return AgentRunResponse(
@@ -1024,6 +1088,100 @@ async def agent_stream(
             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(stream_events(), media_type="text/event-stream")
+
+
+# ---------------------------------------------------------------------------
+# v2 엔드포인트: LangGraph 기반 agent 실행 (interrupt/approve 패턴)
+# ---------------------------------------------------------------------------
+
+
+@app.post("/v2/agent/run")
+async def v2_agent_run(
+    request: AgentRunRequest,
+    _: None = Depends(verify_api_key),
+):
+    """LangGraph 기반 agent 실행 (1단계: interrupt까지).
+
+    graph를 실행하여 `approval_wait` 노드에서 interrupt되면
+    `status: awaiting_approval`과 함께 승인 요청 정보를 반환한다.
+
+    클라이언트는 반환된 `thread_id`를 저장해두고
+    `/v2/agent/approve`로 승인/거절을 전달해야 한다.
+    """
+    if not manager.graph:
+        raise HTTPException(status_code=503, detail="LangGraph graph가 초기화되지 않았습니다.")
+
+    from langchain_core.messages import HumanMessage
+
+    thread_id = request.session_id or str(uuid.uuid4())
+    config = {"configurable": {"thread_id": thread_id}}
+    initial_state = {
+        "session_id": request.session_id,
+        "request_id": str(uuid.uuid4()),
+        "messages": [HumanMessage(content=request.query)],
+    }
+
+    # interrupt()는 sync invoke 경로에서 가장 안정적으로 동작한다.
+    await asyncio.to_thread(manager.graph.invoke, initial_state, config)
+
+    # interrupt 상태 확인
+    graph_state = await asyncio.to_thread(manager.graph.get_state, config)
+    if graph_state.next:
+        # interrupt 대기 중: approval_request 정보를 클라이언트에 반환
+        approval_value = None
+        if graph_state.tasks and graph_state.tasks[0].interrupts:
+            approval_value = graph_state.tasks[0].interrupts[0].value
+        return {
+            "status": "awaiting_approval",
+            "thread_id": thread_id,
+            "approval_request": approval_value,
+        }
+
+    # interrupt 없이 완료된 경우 (rejected 또는 오류)
+    final_state = graph_state.values
+    return {
+        "status": "completed",
+        "thread_id": thread_id,
+        "text": final_state.get("final_text", ""),
+    }
+
+
+@app.post("/v2/agent/approve")
+async def v2_agent_approve(
+    thread_id: str,
+    approved: bool,
+    _: None = Depends(verify_api_key),
+):
+    """interrupt된 graph를 resume한다 (2단계: 승인/거절).
+
+    Parameters
+    ----------
+    thread_id : str
+        `/v2/agent/run`에서 반환된 thread_id.
+    approved : bool
+        True면 tool_execute로 진행, False면 graph가 END로 종료.
+    """
+    if not manager.graph:
+        raise HTTPException(status_code=503, detail="LangGraph graph가 초기화되지 않았습니다.")
+
+    from langgraph.types import Command
+
+    config = {"configurable": {"thread_id": thread_id}}
+
+    # resume도 동일한 sync invoke 경로로 처리한다.
+    result = await asyncio.to_thread(
+        manager.graph.invoke,
+        Command(resume={"approved": approved}),
+        config,
+    )
+
+    return {
+        "status": "completed",
+        "thread_id": thread_id,
+        "text": result.get("final_text", ""),
+        "tool_results": result.get("tool_results", {}),
+        "approval_status": result.get("approval_status", ""),
+    }
 
 
 if __name__ == "__main__":

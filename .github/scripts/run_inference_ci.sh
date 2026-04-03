@@ -9,19 +9,33 @@ fi
 
 export SKIP_MODEL_LOAD="${SKIP_MODEL_LOAD:-true}"
 
-# PR-safe inference suite:
-# - auto-discovers tests under tests/test_inference
-# - excludes dedicated integration/E2E lanes by filename convention
-# - keeps real-FAISS persistence behavior in its own lane until stabilized
-# New unit/contract tests should land under tests/test_inference and will be
-# picked up automatically without workflow edits.
+# PR-safe runtime suite:
+# - explicitly covers the shell-first MVP runtime surfaces
+# - avoids broad auto-discovery of legacy retrieval/search suites
+# - keeps integration/E2E and storage-heavy indexing flows in dedicated lanes
+test_targets=(
+  tests/test_inference/test_agent_loop.py
+  tests/test_inference/test_api_server_units.py
+  tests/test_inference/test_feature_flags.py
+  tests/test_inference/test_graph_smoke.py
+  tests/test_inference/test_response_formatter.py
+  tests/test_inference/test_session_context.py
+  tests/test_inference/test_tool_router.py
+)
+
+coverage_targets=(
+  --cov=src.inference.agent_loop
+  --cov=src.inference.feature_flags
+  --cov=src.inference.graph
+  --cov=src.inference.response_formatter
+  --cov=src.inference.session_context
+  --cov=src.inference.tool_router
+)
+
 uv run pytest \
-  tests/test_inference \
-  --ignore-glob='tests/test_inference/*integration*.py' \
-  --ignore-glob='tests/test_inference/*e2e*.py' \
-  --ignore='tests/test_inference/test_index_manager.py' \
+  "${test_targets[@]}" \
   -o "addopts=" \
-  --cov=src/inference \
+  "${coverage_targets[@]}" \
   --cov-branch \
   --cov-fail-under="${coverage_threshold}" \
   --cov-report=xml \

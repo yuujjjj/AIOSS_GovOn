@@ -148,8 +148,7 @@ class SessionStore:
     def _init_db(self) -> None:
         Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
         with closing(self._connect()) as conn, conn:
-            conn.executescript(
-                """
+            conn.executescript("""
                 CREATE TABLE IF NOT EXISTS sessions (
                     session_id TEXT PRIMARY KEY,
                     created_at REAL NOT NULL,
@@ -178,8 +177,7 @@ class SessionStore:
                     timestamp REAL NOT NULL,
                     FOREIGN KEY(session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
                 );
-                """
-            )
+                """)
 
     def _ensure_session(self, session_id: str, created_at: Optional[float] = None) -> None:
         now = time.time()
@@ -333,7 +331,9 @@ class SessionStore:
 
     def delete(self, session_id: str) -> bool:
         with closing(self._connect()) as conn, conn:
-            deleted = conn.execute("DELETE FROM sessions WHERE session_id=?", (session_id,)).rowcount
+            deleted = conn.execute(
+                "DELETE FROM sessions WHERE session_id=?", (session_id,)
+            ).rowcount
             conn.execute("DELETE FROM messages WHERE session_id=?", (session_id,))
             conn.execute("DELETE FROM tool_runs WHERE session_id=?", (session_id,))
         return bool(deleted)

@@ -1,8 +1,10 @@
-import requests
 import os
 
+import requests
+
+
 def test_law():
-    oc = os.getenv('LAW_GO_KR_OC')
+    oc = os.getenv("LAW_GO_KR_OC")
     url = f"http://www.law.go.kr/DRF/lawSearch.do?target=law&query=민원&type=XML&OC={oc}"
     try:
         res = requests.get(url, timeout=10)
@@ -16,8 +18,9 @@ def test_law():
     except Exception as e:
         print(f"[LAW] ❌ 에러: {e}")
 
+
 def test_alio():
-    key = os.getenv('DATA_GO_KR_API_KEY')
+    key = os.getenv("DATA_GO_KR_API_KEY")
     # Decoding 키 사용
     url = "https://apis.data.go.kr/1051000/public_inst/list"
     params = {"serviceKey": key, "pageNo": 1, "numOfRows": 1, "resultType": "json"}
@@ -44,6 +47,7 @@ def test_alio():
             print(f"[ALIO] ❌ HTTP 오류: {res.status_code}")
     except Exception as e:
         print(f"[ALIO] ❌ 연결 에러: {e}")
+
 
 if __name__ == "__main__":
     print("-" * 50)

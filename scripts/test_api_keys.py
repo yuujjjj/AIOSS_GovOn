@@ -1,9 +1,11 @@
-import requests
 import os
 import sys
 
+import requests
+
+
 def test_law_api():
-    oc = os.getenv('LAW_GO_KR_OC')
+    oc = os.getenv("LAW_GO_KR_OC")
     url = "http://www.law.go.kr/DRF/lawSearch.do"
     params = {"target": "law", "query": "민원", "type": "XML", "OC": oc}
     try:
@@ -19,8 +21,9 @@ def test_law_api():
         print(f"[LAW API] ❌ 연결 실패: {e}")
         return False
 
+
 def test_alio_api():
-    key = os.getenv('DATA_GO_KR_API_KEY')
+    key = os.getenv("DATA_GO_KR_API_KEY")
     # Decoding 키를 사용하기 때문에 requests가 한 번 더 인코딩하도록 함
     url = "https://apis.data.go.kr/1051000/public_inst/list"
     params = {"serviceKey": key, "pageNo": 1, "numOfRows": 1, "resultType": "json"}
@@ -34,7 +37,11 @@ def test_alio_api():
                     print(f"[ALIO API] ✅ 유효함 (상태코드: 200, 결과코드: 00)")
                     return True
                 else:
-                    msg = data.get("response", {}).get("header", {}).get("resultMsg", "알 수 없는 오류")
+                    msg = (
+                        data.get("response", {})
+                        .get("header", {})
+                        .get("resultMsg", "알 수 없는 오류")
+                    )
                     print(f"[ALIO API] ❌ 인증 오류 (결과코드: {code}, 메시지: {msg})")
                     return False
             except Exception:
@@ -49,6 +56,7 @@ def test_alio_api():
     except Exception as e:
         print(f"[ALIO API] ❌ 연결 실패: {e}")
         return False
+
 
 if __name__ == "__main__":
     print("-" * 50)

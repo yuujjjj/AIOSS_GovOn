@@ -5,6 +5,7 @@ DATABASE_URL 환경변수를 통해 연결 문자열을 주입받는다.
 기본값은 로컬 GovOn 홈 디렉터리 아래 SQLite 파일을 사용한다.
 """
 
+# isort:skip_file
 import logging
 import os
 import sys
