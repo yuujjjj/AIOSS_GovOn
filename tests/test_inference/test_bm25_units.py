@@ -39,7 +39,6 @@ if not _faiss_is_real:
 
 from src.inference.bm25_indexer import BM25Indexer, KoreanTokenizer, _STOPWORDS
 
-
 # ---------------------------------------------------------------------------
 # KoreanTokenizer 테스트
 # ---------------------------------------------------------------------------

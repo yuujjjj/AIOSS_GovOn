@@ -31,6 +31,7 @@ except ImportError:
 _BASE_URL = "http://apis.data.go.kr/1140100/minAnalsInfoView5"
 _ENDPOINT_SIMILAR = "/minSimilarInfo5"
 
+
 class MinwonAnalysisAction(BaseAction):
     """공공데이터포털 민원분석정보조회 API Action.
 
@@ -210,9 +211,7 @@ class MinwonAnalysisAction(BaseAction):
             logger.warning(f"[minwon_analysis] API 타임아웃: {exc}")
             return None
         except httpx.HTTPStatusError as exc:
-            logger.warning(
-                f"[minwon_analysis] HTTP 오류 {exc.response.status_code}: {exc}"
-            )
+            logger.warning(f"[minwon_analysis] HTTP 오류 {exc.response.status_code}: {exc}")
             return None
         except Exception as exc:
             logger.error(f"[minwon_analysis] API 호출 오류: {exc}", exc_info=True)
@@ -222,8 +221,7 @@ class MinwonAnalysisAction(BaseAction):
         result_code = str(body.get("resultCode", "00"))
         if result_code not in ("00", "0", "200"):
             logger.warning(
-                f"[minwon_analysis] API resultCode={result_code}: "
-                f"{body.get('resultMsg', '')}"
+                f"[minwon_analysis] API resultCode={result_code}: " f"{body.get('resultMsg', '')}"
             )
             return None
 

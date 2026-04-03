@@ -202,7 +202,9 @@ class AgentLoop:
         step_name = step.step_id
         tool_fn = self._tools.get(step_name)
         if tool_fn is None:
-            return ToolResult(tool=step.tool, success=False, error=f"등록되지 않은 tool: {step_name}")
+            return ToolResult(
+                tool=step.tool, success=False, error=f"등록되지 않은 tool: {step_name}"
+            )
 
         start = time.monotonic()
         try:

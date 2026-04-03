@@ -1,8 +1,9 @@
 import requests
 import os
 
+
 def test_law_https():
-    oc = os.getenv('LAW_GO_KR_OC')
+    oc = os.getenv("LAW_GO_KR_OC")
     # HTTPS 주소로 시도
     url = f"https://www.law.go.kr/DRF/lawSearch.do?target=law&query=민원&type=XML&OC={oc}"
     try:
@@ -17,6 +18,7 @@ def test_law_https():
             print(f"⚠️ 응답 확인 필요: {res.text[:200]}")
     except Exception as e:
         print(f"❌ 에러: {e}")
+
 
 if __name__ == "__main__":
     test_law_https()

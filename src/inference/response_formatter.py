@@ -76,6 +76,7 @@ class StandardResponse:
 # thought 블록 정규식 (단일 라인 + 멀티 라인)
 _THINK_PATTERN = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
 
+
 class ResponseFormatter:
     """응답 포맷 표준화기."""
 

@@ -1,16 +1,12 @@
 import requests
 import os
 
+
 def test_alio_api():
-    key = os.getenv('DATA_GO_KR_API_KEY')
+    key = os.getenv("DATA_GO_KR_API_KEY")
     # Decoding 키를 직접 사용하여 requests가 인코딩하도록 위임
     url = "https://apis.data.go.kr/1051000/public_inst/list"
-    params = {
-        "serviceKey": key,
-        "pageNo": 1,
-        "numOfRows": 1,
-        "resultType": "json"
-    }
+    params = {"serviceKey": key, "pageNo": 1, "numOfRows": 1, "resultType": "json"}
     try:
         res = requests.get(url, params=params, timeout=10)
         print(f"HTTP Status: {res.status_code}")
@@ -18,7 +14,7 @@ def test_alio_api():
             if "<ServiceKey Error" in res.text:
                 print("❌ 인증키 오류 (ServiceKey Error)")
                 return False
-            
+
             try:
                 data = res.json()
                 header = data.get("response", {}).get("header", {})
@@ -39,6 +35,7 @@ def test_alio_api():
     except Exception as e:
         print(f"❌ 연결 실패: {e}")
         return False
+
 
 if __name__ == "__main__":
     test_alio_api()
