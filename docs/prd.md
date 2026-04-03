@@ -1,91 +1,108 @@
-# PRD: GovOn — 공무원을 위한 자율형 행정 에이전트 (Administrative Agentic IDE)
-**Status**: Draft | **Author**: umyunsang | **Last Updated**: 2026-04-01 | **Version**: 4.1
-**Stakeholders**: Eng Lead, Design Lead, Public Safety Dept.
+# PRD: GovOn — 에이전틱 행정 보조 CLI 셸
+**Status**: Accepted Target | **Author**: umyunsang | **Last Updated**: 2026-04-03 | **Version**: 5.0
+**Stakeholders**: Eng Lead, AI Lead, Runtime Lead
 
 ---
 
 ## 1. Problem Statement (문제 정의)
-**"개발자에게는 AI IDE(Cursor, Windsurf)가 있지만, 공무원에게는 아직 '메모장'뿐입니다."**
 
-현재 공공기관의 민원 처리 시스템은 텍스트를 단순히 저장하고 전달하는 수준에 머물러 있습니다. 개발자가 수동으로 모든 라이브러리를 찾고 디버깅하던 과거에서 벗어나 AI IDE를 통해 맥락을 파악하고 코드를 자동 완성하듯, 행정 업무 역시 **'단순 반복'에서 '의사결정' 중심**으로의 전환(AX, AI Transformation)이 절실합니다.
+행정 실무자는 민원 답변을 준비할 때 다음 문제를 동시에 겪는다.
 
-**핵심 고충 (The "Pre-IDE" Administrative Pains):**
-1. **의도 파악의 블랙박스 (Semantic Ambiguity & Context Blindness)**:
-   - **현상**: 민원 시스템은 '단어'만 전달할 뿐 '의도'를 읽지 못합니다. '소음'이라는 단어가 들어오면 이것이 공사장 소음인지, 층간소음인지, 아니면 환경 정책에 대한 불만인지 담당자가 일일이 전문을 읽고 해석해야 합니다.
-   - **IDE 비유**: 마치 에러 메시지나 스택 트레이스 없이 "Error 500"이라는 결과만 띄워주는 컴파일러와 같습니다. 개발자가 코드 전체를 한 줄씩 디버깅하듯, 공무원은 모든 민원 맥락을 수동으로 '추론'하는 데 에너지의 70%를 소모합니다.
+1. 질문의 의도를 빠르게 파악해야 한다.
+2. 비슷한 사례와 외부 정보를 여러 시스템에서 확인해야 한다.
+3. 실제 답변 초안을 정중하고 일관된 문체로 작성해야 한다.
+4. 이미 작성한 답변을 다시 고치거나 근거를 덧붙여야 한다.
 
-2. **분절된 도구와 가혹한 컨텍스트 스위칭 (Fragmented Tools & Tooling Overload)**:
-   - **현상**: 유사 사례 검색(과거 시스템), 법령 대조(국가법령정보센터), 답변 작성(한글/워드), 보도자료 포맷팅(기관 내부 양식)이 모두 별도의 창에서 이루어집니다. 정보 간의 연결 고리가 없어 담당자는 수십 개의 탭을 오가며 복사-붙여넣기를 반복합니다.
-   - **IDE 비유**: 브라우저(문서), 메모장(코딩), 터미널(컴파일), 별도 Git 클라이언트가 전혀 연동되지 않는 환경에서 코딩하는 것과 같습니다. 도구를 바꿀 때마다 업무의 흐름(Flow)이 끊기고 휴먼 에러의 가능성이 극대화됩니다.
+현재 문제는 단순히 LLM이 없다는 것이 아니라, **작업 단위로 사고하고 승인하며 이어서 대화할 수 있는 실무형 인터페이스가 없다**는 데 있다.
 
-3. **지식의 화석화와 리드타임의 장기화 (Fossilized Knowledge & Knowledge Gap)**:
-   - **현상**: 수십 년간 축적된 베테랑의 행정 노하우는 문서고 속 PDF나 개인의 머릿속에 '화석화'되어 있습니다. 신규 공무원은 이 '살아있지 않은 지식'을 습득하기 위해 수개월의 시행착오를 겪으며, 이는 곧 행정 서비스의 품질 저하로 이어집니다.
-   - **IDE 비유**: 'IntelliSense'나 '자동 완성' 기능이 전혀 없는 코드베이스와 같습니다. 단 하나의 함수(행정 사례)를 찾기 위해 전체 소스 코드를 다 읽어야 하는 신입 개발자의 막막함이 매일 행정 현장에서 반복됩니다.
+GovOn MVP는 이 문제를 다음 방식으로 해결한다.
 
-4. **보안이라는 거대한 장벽과 기술적 고립 (The Security Wall & Tech Isolation)**:
-   - **현상**: 민감정보 보호를 위해 폐쇄망을 사용하지만, 이는 최신 AI 기술(Cloud LLM)로부터의 단절을 의미합니다. 전 세계가 AI로 생산성을 높일 때, 공무원은 보안 규정 때문에 10년 전과 동일한 수작업 방식에 갇혀 있습니다.
-   - **IDE 비유**: 보안상의 이유로 최신 라이브러리나 IDE 업데이트가 금지된 채 90년대 개발 환경에서 최신 소프트웨어를 만들라는 요구를 받는 것과 같은 고립감을 느낍니다.
+- 사용자는 웹 UI가 아니라 `govon` 셸에서 자연어로 요청한다.
+- AI는 한 번의 요청을 하나의 작업으로 해석한다.
+- 필요한 검색이나 API 조회가 있으면 먼저 사람말로 설명하고 승인을 받는다.
+- 승인된 작업만 실행하고, 거절되면 바로 멈춘다.
+- 답변 작성이 필요하면 민원 답변 특화 어댑터를 사용한다.
 
 ---
 
 ## 2. Goals & Success Metrics (목표 및 성공 지표)
 본 프로젝트의 목표는 공무원이 **'행정 엔진의 메인테이너'**로서 고도의 의사결정에만 집중할 수 있는 **에이전틱 행정 환경**을 구축하는 것입니다.
 
-| 목표 (Goal) | 성공 지표 (Metric) | 현재 기준 (Baseline) | 목표치 (Target) | 측정 창구 |
-|------|--------|-----------------|--------|--------------------|
-| **행정 속도 (Administrative Velocity)** | 민원 분석부터 초안 생성까지의 시간 | 평균 15분 (수작업) | **30초 이내** | 에이전트 인터랙션 로그 |
-| **의사결정 정확도 (Decision Accuracy)** | 에이전트 제안 수용률 (Acceptance Rate) | 0% (수동 분류) | **> 85%** | 사용자 피드백 (좋아요/수정) |
-| **인지 부하 감소 (Cognitive Load)** | 단일 민원 처리에 필요한 검색/도구 전환 횟수 | 5회 이상 | **1회 (에이전트 내 통합)** | 사용자 여정 분석 |
-| **인프라 자율성 (On-Premise Autonomy)** | 폐쇄망 내 에이전트 구동 성공률 | N/A | **100%** | Docker Health Check |
+| 목표 (Goal) | 성공 지표 (Metric) | 목표치 (Target) |
+|------|--------|--------|
+| 셸 중심 업무 진입 | `govon` 실행 후 첫 응답 가능 상태 | 10초 이내 |
+| 승인 기반 실행 신뢰성 | 승인 없는 tool 실행 비율 | 0% |
+| 민원 답변 초안 생산성 | 답변 초안 생성까지 걸리는 시간 | 60초 이내 |
+| 세션 연속성 | `govon --session <id>` 재개 성공률 | 100% |
+| 근거 보강 가능성 | 초안 생성 후 evidence augmentation 성공률 | 95% 이상 |
 
 ---
 
 ## 3. Non-Goals (비목표)
-- 민원인 직접 응대 (민원인은 기존 채널 유지)
-- 외부 클라우드 의존형 AI 서비스 (100% 온프레미스 에이전트 지향)
-- 행정 시스템 자동 발송 (최종 승인은 반드시 **Human-in-the-loop**)
+- 공문서 초안 작성
+- 민원 분류 기능
+- 웹 UI 기반 업무 수행
+- 승인 없는 완전 자율 에이전트
+- 복잡한 graph checkpoint 시스템
 
 ---
 
 ## 4. User Personas & Stories (사용자 페르소나 및 스토리)
 
-### **Primary Persona**: 김민원 (35세, 지자체 행정직 7급)
-*"Cursor를 쓰는 개발자처럼, 저도 GovOn 에이전트에게 '이 도로 파손 민원, 작년 OO동 사례랑 비교해서 보도자료 초안 잡아줘'라고 한 줄만 말하고 싶어요."*
+### Primary Persona: 민원 담당 실무자
+
+*"터미널에서 그냥 자연어로 말하면, 필요한 검색과 조회를 거쳐 답변 초안을 같이 만들어주는 업무 보조 셸이 필요합니다."*
 
 **User Stories:**
-1. **에이전틱 자동 분류**: "나는 민원이 접수되자마자 에이전트가 맥락을 분석해 관련 법령과 담당 부서를 제안해주길 원한다. 마치 IDE가 코드 에러를 미리 찾아주듯, 오분류 리스크를 사전에 방지하기 위해서다."
-2. **컨텍스트 기반 사례 제안**: "나는 답변을 작성할 때 에이전트가 내 전임자들이 썼던 베스트 답변들을 자동으로 추천해주길 원한다. 코드 자동 완성 기능처럼, 내가 일일이 과거 문서를 뒤지는 수고를 덜기 위해서다."
-3. **멀티스텝 태스크 실행**: "나는 민원 답변뿐만 아니라 연관된 보도자료와 보고서 초안까지 한 번에 생성하고 싶다. 복잡한 워크플로우를 에이전트가 오케스트레이션하여 내 업무의 질을 높여주길 원하기 때문이다."
+1. "나는 민원 답변 초안을 자연어로 요청하고, 필요한 자료 검색은 AI가 대신 제안해주길 원한다."
+2. "나는 AI가 도구를 쓰기 전에 왜 필요한지 쉽게 설명하고 승인받길 원한다."
+3. "나는 답변을 만든 뒤에도 같은 세션에서 수정 요청이나 근거 추가 요청을 이어서 하고 싶다."
 
 ---
 
 ## 5. Solution Overview (솔루션 개요)
 
-GovOn은 공무원의 업무 방식을 **'수행자'에서 '오케스트레이터'**로 변화시키는 **3계층 에이전틱 아키텍처**를 제공합니다.
+GovOn MVP는 다음 구조를 가진다.
 
-1. **Human (The Developer Role)**: 공무원은 UI(에이전트 사이드바)를 통해 명령을 내리고 에이전트의 제안을 최종 승인/수정합니다.
-2. **Brain (The Agentic IDE Core)**: Smolagents 기반 오케스트레이터가 사용자의 의도를 파악하여 '검색', '분석', '생성' 도구를 적재적소에 호출합니다.
-   - 현재 기본 내장 tool catalog는 `classify`, `search_similar`, `generate_public_doc`, `generate_civil_response`, `api_lookup`이며, registry는 기관 요구에 맞게 확장 가능합니다.
-3. **Hands & Feet (The Extensions)**:
-   - **Local RAG**: 기관 내부의 방대한 지식 베이스를 실시간 참조.
-   - **Multi-LoRA Hosting**: 문서 성격(민원, 보도자료, 공문서)에 최적화된 전문 어댑터를 동적으로 교체하여 'Expert-level' 결과물 보장.
+1. **CLI Surface**
+   - `govon`으로 진입하는 대화형 셸
+   - 자연어 중심 상호작용
+   - 승인/거절 UI
+
+2. **Local Runtime Daemon**
+   - FastAPI 기반 로컬 데몬
+   - 모델, tool, 세션, RAG를 단일 ownership으로 관리
+
+3. **Approval-Gated Task Loop**
+   - 요청을 한 작업으로 정리
+   - 실행 전 승인 요청
+   - 승인된 경우에만 tool 실행
+
+4. **Execution Layer**
+   - base model
+   - civil-response adapter
+   - unified `api_lookup`
+   - local `rag_search`
+   - `append_evidence`
 
 ---
 
 ## 6. Technical Considerations (기술적 고려사항)
-- **vLLM Multi-LoRA**: 단일 GPU에서 여러 어댑터를 동시 서빙하여 '전문가 그룹(MoE)'과 같은 효과를 온프레미스에서 구현.
-- **Smolagents**: 코드 에이전트 방식을 통해 복잡한 도구 호출 로직을 파이썬 코드로 실행, 높은 유연성과 확장성 확보.
-- **AWQ Quantization**: 저사양 GPU에서도 에이전트가 지연 없이 '실시간 IntelliSense'를 제공할 수 있도록 최적화.
+- **FastAPI Local Daemon**: CLI와 모델/도구 실행을 분리해 데몬 재사용과 세션 지속성을 확보한다.
+- **Approval-Gated Orchestration**: 자동 tool 연쇄 실행보다 사용자 신뢰와 예측 가능성을 우선한다.
+- **Single Task Adapter Use**: 민원 답변 작성 단계에서만 adapter를 attach한다.
+- **SQLite Session Store**: transcript와 tool log를 단순하고 재개 가능한 형태로 보관한다.
 
 ---
 
 ## 7. Launch Plan (출시 계획)
-- **Phase 1 (MVP)**: 에이전트 기반 기본 워크플로우(분류+답변) 검증.
-- **Phase 2 (Alpha)**: 멀티 도구 호출(RAG+문서 생성) 및 피드백 루프 통합.
-- **Phase 3 (GA)**: 지자체 폐쇄망용 'Administrative Agent Package' 정식 배포.
+- **Phase 1 (MVP)**: CLI + daemon + 승인 기반 민원 답변 루프 검증
+- **Phase 2**: evidence augmentation, RAG corpus 확장, daemon 운영 고도화
+- **Phase 3**: web surface, public-doc adapter, 분류 기능 등 확장
 
 ---
 
 ## 8. Appendix (부록)
-- [ADR-006: 3계층 에이전틱 아키텍처 및 Multi-LoRA 설계](architecture/ADR-006-agentic-architecture.md)
+- [GovOn Shell MVP Architecture](architecture/GovOn-shell-mvp-architecture.md)
+- [ADR-006: GovOn CLI Shell + Local Daemon MVP Architecture](architecture/ADR-006-agentic-architecture.md)
 - [WORKFLOW: 에이전트 오케스트레이터 워크플로우](architecture/WORKFLOW-orchestrator-tool-calling.md)

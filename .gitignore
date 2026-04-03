@@ -105,9 +105,12 @@ node_modules/
 !package-lock.json
 # Tool contexts
 .gemini/
+.codex/
 .claude/
 .claude_bak/
 .gemini_bak/
+/AGENTS.md
+/frontend/AGENTS.md
 CLAUDE.md
 
 
