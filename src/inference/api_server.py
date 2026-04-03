@@ -752,22 +752,9 @@ class vLLMEngineManager:
             session_store=self.session_store,
         )
 
-        # checkpoint: AsyncSqliteSaver 또는 MemorySaver
+        # MVP: MemorySaver 사용 (AsyncSqliteSaver는 async context manager가 필요하므로
+        # daemon startup의 lifespan event에서 별도 처리)
         checkpointer = None
-        try:
-            import os
-            from pathlib import Path
-
-            from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-
-            checkpoint_db = str(
-                Path(os.getenv("GOVON_HOME", str(Path.home() / ".govon")))
-                / "graph_checkpoints.sqlite3"
-            )
-            checkpointer = AsyncSqliteSaver.from_conn_string(checkpoint_db)
-            logger.info(f"LangGraph checkpoint: {checkpoint_db}")
-        except Exception as exc:
-            logger.warning(f"AsyncSqliteSaver 초기화 실패, MemorySaver 사용: {exc}")
 
         self.graph = build_govon_graph(
             planner_adapter=planner,
