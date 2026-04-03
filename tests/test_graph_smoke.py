@@ -145,9 +145,9 @@ class TestGraphSmoke:
         )
 
         assert result.get("final_text"), "승인 후 final_text가 생성되어야 합니다"
-        assert result.get("approval_status") == ApprovalStatus.APPROVED.value, (
-            f"approval_status가 APPROVED여야 합니다. 실제: {result.get('approval_status')}"
-        )
+        assert (
+            result.get("approval_status") == ApprovalStatus.APPROVED.value
+        ), f"approval_status가 APPROVED여야 합니다. 실제: {result.get('approval_status')}"
 
     @pytest.mark.asyncio
     async def test_graph_ends_on_rejection(self, graph):
@@ -174,9 +174,7 @@ class TestGraphSmoke:
             config=config,
         )
 
-        assert result.get("approval_status") == ApprovalStatus.REJECTED.value, (
-            f"approval_status가 REJECTED여야 합니다. 실제: {result.get('approval_status')}"
-        )
-        assert not result.get("tool_results"), (
-            "거절 후 tool_results가 비어있어야 합니다"
-        )
+        assert (
+            result.get("approval_status") == ApprovalStatus.REJECTED.value
+        ), f"approval_status가 REJECTED여야 합니다. 실제: {result.get('approval_status')}"
+        assert not result.get("tool_results"), "거절 후 tool_results가 비어있어야 합니다"

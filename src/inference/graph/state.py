@@ -28,10 +28,10 @@ class ApprovalStatus(str, Enum):
 class TaskType(str, Enum):
     """planner가 분류하는 작업 유형."""
 
-    DRAFT_RESPONSE = "draft_response"       # 민원 답변 초안 작성
-    REVISE_RESPONSE = "revise_response"     # 답변 수정
-    APPEND_EVIDENCE = "append_evidence"     # 근거 보강
-    LOOKUP_STATS = "lookup_stats"           # 통계/사례 조회
+    DRAFT_RESPONSE = "draft_response"  # 민원 답변 초안 작성
+    REVISE_RESPONSE = "revise_response"  # 답변 수정
+    APPEND_EVIDENCE = "append_evidence"  # 근거 보강
+    LOOKUP_STATS = "lookup_stats"  # 통계/사례 조회
 
 
 @dataclass
@@ -75,20 +75,20 @@ class GovOnGraphState(TypedDict, total=False):
     messages: Annotated[Sequence[AnyMessage], add_messages]
 
     # --- planner 출력 ---
-    task_type: str                          # TaskType.value
-    goal: str                               # 승인 프롬프트에 표시할 작업 설명
-    reason: str                             # 작업 이유
-    planned_tools: List[str]                # 실행 예정 tool 이름 리스트
+    task_type: str  # TaskType.value
+    goal: str  # 승인 프롬프트에 표시할 작업 설명
+    reason: str  # 작업 이유
+    planned_tools: List[str]  # 실행 예정 tool 이름 리스트
 
     # --- approval gate ---
-    approval_status: str                    # ApprovalStatus.value
+    approval_status: str  # ApprovalStatus.value
 
     # --- executor 출력 ---
-    tool_results: Dict[str, Any]            # {tool_name: result_dict, ...}
-    accumulated_context: Dict[str, Any]     # tool 간 전달되는 누적 컨텍스트
+    tool_results: Dict[str, Any]  # {tool_name: result_dict, ...}
+    accumulated_context: Dict[str, Any]  # tool 간 전달되는 누적 컨텍스트
 
     # --- synthesis 출력 ---
-    final_text: str                         # 최종 사용자 응답 텍스트
+    final_text: str  # 최종 사용자 응답 텍스트
 
     # --- 메타데이터 ---
     error: Optional[str]

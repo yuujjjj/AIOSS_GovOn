@@ -190,9 +190,7 @@ class vLLMEngineManager:
                     indexer = BM25Indexer()
                     indexer.load(bm25_path)
                     self.bm25_indexers[idx_type] = indexer
-                    logger.info(
-                        f"BM25 인덱스 로드 완료: {idx_type.value} ({indexer.doc_count}건)"
-                    )
+                    logger.info(f"BM25 인덱스 로드 완료: {idx_type.value} ({indexer.doc_count}건)")
                 except Exception as exc:
                     logger.warning(f"BM25 인덱스 로드 실패 ({idx_type.value}): {exc}")
 
@@ -284,7 +282,9 @@ class vLLMEngineManager:
             if result.source_type != IndexType.CASE:
                 continue
             metadata = result.metadata or {}
-            complaint = metadata.get("complaint_text") or metadata.get("complaint") or result.content
+            complaint = (
+                metadata.get("complaint_text") or metadata.get("complaint") or result.content
+            )
             answer = metadata.get("answer_text") or metadata.get("answer") or result.content
             retrieved_cases.append(
                 {
@@ -314,7 +314,9 @@ class vLLMEngineManager:
         if turns and turns[-1].role == "user" and turns[-1].content == current_query:
             turns = turns[:-1]
 
-        previous_user = next((turn.content for turn in reversed(turns) if turn.role == "user"), None)
+        previous_user = next(
+            (turn.content for turn in reversed(turns) if turn.role == "user"), None
+        )
         previous_assistant = next(
             (turn.content for turn in reversed(turns) if turn.role == "assistant"),
             None,
@@ -433,7 +435,9 @@ class vLLMEngineManager:
             )
 
         if len(lines) == 1:
-            lines.append("- 내부 검색 결과를 충분히 확보하지 못해 일반 행정 응대 원칙 기준으로 작성했습니다.")
+            lines.append(
+                "- 내부 검색 결과를 충분히 확보하지 못해 일반 행정 응대 원칙 기준으로 작성했습니다."
+            )
 
         return "\n".join(lines)
 
@@ -644,7 +648,9 @@ class vLLMEngineManager:
 
             external_cases = []
             for item in api_lookup_data.get("results", [])[:3]:
-                complaint = item.get("content") or item.get("qnaContent") or item.get("question", "")
+                complaint = (
+                    item.get("content") or item.get("qnaContent") or item.get("question", "")
+                )
                 answer = item.get("answer") or item.get("qnaAnswer") or item.get("title", "")
                 if complaint or answer:
                     external_cases.append(
@@ -662,10 +668,12 @@ class vLLMEngineManager:
                 use_rag=True,
             )
             request_id = str(uuid.uuid4())
-            final_output, retrieved_cases, search_results = await engine_ref.generate_civil_response(
-                gen_request,
-                request_id,
-                external_cases=external_cases,
+            final_output, retrieved_cases, search_results = (
+                await engine_ref.generate_civil_response(
+                    gen_request,
+                    request_id,
+                    external_cases=external_cases,
+                )
             )
             if final_output is None:
                 return {"text": "", "error": "민원 답변 생성 실패"}
@@ -1056,7 +1064,11 @@ async def agent_run(
     for result in trace.tool_results:
         if tool_name(result.tool) == ToolType.RAG_SEARCH.value and result.success:
             search_results = result.data.get("results")
-        elif tool_name(result.tool) == ToolType.API_LOOKUP.value and result.success and not search_results:
+        elif (
+            tool_name(result.tool) == ToolType.API_LOOKUP.value
+            and result.success
+            and not search_results
+        ):
             search_results = result.data.get("results")
 
     return AgentRunResponse(

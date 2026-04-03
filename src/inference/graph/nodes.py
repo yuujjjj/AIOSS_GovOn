@@ -95,8 +95,7 @@ async def planner_node(
     plan = await planner_adapter.plan(messages=messages, context=context)
 
     logger.info(
-        f"[planner] task_type={plan.task_type.value} "
-        f"tools={plan.tools} reason={plan.reason}"
+        f"[planner] task_type={plan.task_type.value} " f"tools={plan.tools} reason={plan.reason}"
     )
 
     return {
