@@ -1,5 +1,6 @@
-import requests
 import os
+
+import requests
 
 
 def test_alio_api():

@@ -1,6 +1,7 @@
-import requests
 import os
 import sys
+
+import requests
 
 
 def test_law_api():

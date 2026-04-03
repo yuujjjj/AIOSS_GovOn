@@ -21,9 +21,10 @@ from loguru import logger
 from .state import ApprovalStatus, GovOnGraphState
 
 if TYPE_CHECKING:
+    from src.inference.session_context import SessionStore
+
     from .executor_adapter import ExecutorAdapter
     from .planner_adapter import PlannerAdapter
-    from src.inference.session_context import SessionStore
 
 
 async def session_load_node(

@@ -1,5 +1,6 @@
-import requests
 import os
+
+import requests
 
 
 def test_law_https():
