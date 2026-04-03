@@ -31,26 +31,6 @@ except ImportError:
 _BASE_URL = "http://apis.data.go.kr/1140100/minAnalsInfoView5"
 _ENDPOINT_SIMILAR = "/minSimilarInfo5"
 
-# 분류 카테고리 → 한글 검색어 매핑
-_CATEGORY_KO: Dict[str, str] = {
-    "environment": "환경",
-    "traffic": "교통",
-    "welfare": "복지",
-    "safety": "안전",
-    "tax": "세금",
-    "housing": "주거",
-    "education": "교육",
-    "health": "보건",
-    "culture": "문화",
-    "economy": "경제",
-    "civil": "민원",
-    "administrative": "행정",
-    "infrastructure": "기반시설",
-    "public_order": "치안",
-    "labor": "노동",
-}
-
-
 class MinwonAnalysisAction(BaseAction):
     """공공데이터포털 민원분석정보조회 API Action.
 
@@ -182,8 +162,8 @@ class MinwonAnalysisAction(BaseAction):
     ) -> Dict[str, Any]:
         """유사 민원 사례 검색에 필요한 payload를 구성한다.
 
-        search_similar tool과 api_lookup action이 같은 minSimilarInfo5 호출 경로를
-        공유할 수 있도록 공개 helper로 제공한다.
+        api_lookup capability 내부에서 minSimilarInfo5 호출 경로를
+        공용으로 재사용할 수 있도록 공개 helper로 제공한다.
         """
         search_query = self._enrich_query(query, context)
         logger.debug(f"[minwon_analysis] 보강된 검색어: {search_query!r}")
@@ -363,33 +343,25 @@ class MinwonAnalysisAction(BaseAction):
         return citations
 
     def _enrich_query(self, query: str, context: Dict[str, Any]) -> str:
-        """classify 결과의 카테고리를 반영하여 검색어를 보강한다.
+        """세션 요약이나 최근 assistant 응답을 반영해 검색어를 보강한다.
 
         Parameters
         ----------
         query : str
             원본 사용자 쿼리.
         context : Dict[str, Any]
-            AgentLoop 누적 컨텍스트. classify 결과가 있으면 카테고리를 추가.
+            AgentLoop 누적 컨텍스트.
 
         Returns
         -------
         str
             보강된 검색어.
         """
-        classify_data = context.get("classify", {})
-        if not classify_data:
-            return query
-
-        classification = classify_data.get("classification") or {}
-        category = classification.get("category", "")
-        if not category:
-            return query
-
-        ko_category = _CATEGORY_KO.get(category.lower(), "")
-        if ko_category and ko_category not in query:
-            return f"{ko_category} {query}"
-
+        session_context = str(context.get("session_context", "")).strip()
+        if session_context:
+            recent_summary = " ".join(session_context.splitlines()[-2:]).strip()
+            if recent_summary and recent_summary not in query:
+                return f"{query} {recent_summary[:120]}".strip()
         return query
 
     # ---------------------------------------------------------------------------
@@ -411,19 +383,6 @@ class MinwonAnalysisAction(BaseAction):
             필터할 카테고리.
         """
         raise NotImplementedError("get_top_keywords는 아직 구현되지 않았습니다.")
-
-    async def get_classification_info(
-        self,
-        query: str,
-    ) -> Optional[Dict[str, Any]]:
-        """민원 분류 정보를 조회한다. (미구현)
-
-        Parameters
-        ----------
-        query : str
-            분류할 민원 텍스트.
-        """
-        raise NotImplementedError("get_classification_info는 아직 구현되지 않았습니다.")
 
     async def get_trend(
         self,

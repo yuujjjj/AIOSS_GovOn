@@ -1,139 +1,94 @@
-"""SessionContext 및 SessionStore 단위 테스트.
+"""GovOn MVP SessionContext / SessionStore 테스트."""
 
-Issue: #393
-"""
+from pathlib import Path
 
-import pytest
-
-from src.inference.session_context import (
-    ConversationTurn,
-    DraftVersion,
-    SessionContext,
-    SessionStore,
-)
+from src.inference.session_context import SessionContext, SessionStore
 
 
 class TestSessionContext:
-    """SessionContext 단위 테스트."""
-
     def test_create_default(self):
         ctx = SessionContext()
         assert ctx.session_id
         assert ctx.max_history == 20
         assert ctx.conversations == []
-        assert ctx.selected_evidences == []
-        assert ctx.draft_versions == []
+        assert ctx.tool_runs == []
 
     def test_add_turn(self):
         ctx = SessionContext()
         ctx.add_turn("user", "안녕하세요")
         ctx.add_turn("assistant", "무엇을 도와드릴까요?")
+
         assert len(ctx.conversations) == 2
         assert ctx.conversations[0].role == "user"
         assert ctx.conversations[1].role == "assistant"
 
     def test_max_history_trim(self):
         ctx = SessionContext(max_history=3)
-        for i in range(5):
-            ctx.add_turn("user", f"메시지 {i}")
+        for index in range(5):
+            ctx.add_turn("user", f"메시지 {index}")
+
         assert len(ctx.conversations) == 3
         assert ctx.conversations[0].content == "메시지 2"
 
-    def test_add_evidence(self):
+    def test_add_tool_run(self):
         ctx = SessionContext()
-        ctx.add_evidence({"title": "사례1", "content": "내용1"})
-        assert len(ctx.selected_evidences) == 1
+        ctx.add_tool_run("rag_search", success=True, latency_ms=12.5, metadata={"count": 2})
 
-    def test_set_evidences(self):
-        ctx = SessionContext()
-        ctx.add_evidence({"title": "old"})
-        ctx.set_evidences([{"title": "new1"}, {"title": "new2"}])
-        assert len(ctx.selected_evidences) == 2
-        assert ctx.selected_evidences[0]["title"] == "new1"
-
-    def test_add_draft(self):
-        ctx = SessionContext()
-        draft = ctx.add_draft("초안 내용", tool_trace=["classify", "search"])
-        assert draft.version == 1
-        assert draft.content == "초안 내용"
-        assert draft.tool_trace == ["classify", "search"]
-
-    def test_latest_draft(self):
-        ctx = SessionContext()
-        assert ctx.latest_draft is None
-        ctx.add_draft("v1")
-        ctx.add_draft("v2")
-        assert ctx.latest_draft.version == 2
-        assert ctx.latest_draft.content == "v2"
-
-    def test_recent_history(self):
-        ctx = SessionContext()
-        ctx.add_turn("user", "질문")
-        ctx.add_turn("assistant", "답변")
-        history = ctx.recent_history
-        assert len(history) == 2
+        assert len(ctx.tool_runs) == 1
+        assert ctx.tool_runs[0].tool == "rag_search"
+        assert ctx.tool_runs[0].metadata["count"] == 2
 
     def test_build_context_summary_empty(self):
         ctx = SessionContext()
         assert ctx.build_context_summary() == ""
 
-    def test_build_context_summary_with_data(self):
+    def test_build_context_summary_with_dialogue_and_tool_log(self):
         ctx = SessionContext()
-        ctx.add_turn("user", "민원 내용")
-        ctx.add_turn("assistant", "답변 내용")
-        ctx.add_evidence({"title": "사례", "content": "설명"})
-        ctx.add_draft("초안 텍스트")
+        ctx.add_turn("user", "민원 답변 작성해줘")
+        ctx.add_turn("assistant", "초안을 작성했습니다.")
+        ctx.add_tool_run("api_lookup", success=True, metadata={"count": 3})
 
         summary = ctx.build_context_summary()
-        assert "이전 대화" in summary
-        assert "선택된 근거" in summary
-        assert "이전 초안" in summary
-
-    def test_build_context_summary_truncates_long_content(self):
-        ctx = SessionContext()
-        ctx.add_evidence({"title": "사례", "content": "A" * 300})
-        summary = ctx.build_context_summary()
-        assert "..." in summary
+        assert "최근 대화" in summary
+        assert "최근 도구 실행" in summary
+        assert "api_lookup" in summary
 
 
 class TestSessionStore:
-    """SessionStore 단위 테스트."""
-
-    def test_get_or_create_new(self):
-        store = SessionStore()
+    def test_get_or_create_new(self, tmp_path: Path):
+        store = SessionStore(db_path=str(tmp_path / "sessions.sqlite3"))
         ctx = store.get_or_create()
+
         assert ctx.session_id
         assert store.count == 1
 
-    def test_get_or_create_existing(self):
-        store = SessionStore()
+    def test_get_or_create_existing(self, tmp_path: Path):
+        store = SessionStore(db_path=str(tmp_path / "sessions.sqlite3"))
         ctx1 = store.get_or_create(session_id="test-session")
         ctx2 = store.get_or_create(session_id="test-session")
-        assert ctx1 is ctx2
+
+        assert ctx1.session_id == ctx2.session_id == "test-session"
         assert store.count == 1
 
-    def test_get_existing(self):
-        store = SessionStore()
-        ctx = store.get_or_create(session_id="test-session")
-        found = store.get("test-session")
-        assert found is ctx
+    def test_persists_turns_and_tool_runs(self, tmp_path: Path):
+        store = SessionStore(db_path=str(tmp_path / "sessions.sqlite3"))
+        ctx = store.get_or_create(session_id="persist-session")
+        ctx.add_turn("user", "질문")
+        ctx.add_turn("assistant", "답변")
+        ctx.add_tool_run("rag_search", success=True, latency_ms=8.0, metadata={"count": 1})
 
-    def test_get_nonexistent(self):
-        store = SessionStore()
-        assert store.get("nonexistent") is None
+        loaded = store.get("persist-session")
 
-    def test_delete(self):
-        store = SessionStore()
-        store.get_or_create(session_id="test-session")
-        assert store.delete("test-session") is True
+        assert loaded is not None
+        assert len(loaded.conversations) == 2
+        assert loaded.conversations[1].content == "답변"
+        assert len(loaded.tool_runs) == 1
+        assert loaded.tool_runs[0].tool == "rag_search"
+
+    def test_delete(self, tmp_path: Path):
+        store = SessionStore(db_path=str(tmp_path / "sessions.sqlite3"))
+        store.get_or_create(session_id="delete-session")
+
+        assert store.delete("delete-session") is True
         assert store.count == 0
-        assert store.delete("test-session") is False
-
-    def test_max_sessions_eviction(self):
-        store = SessionStore(max_sessions=2)
-        store.get_or_create(session_id="s1")
-        store.get_or_create(session_id="s2")
-        store.get_or_create(session_id="s3")
-        assert store.count == 2
-        # 가장 오래된 s1이 제거되었어야 함
-        assert store.get("s1") is None
+        assert store.delete("delete-session") is False

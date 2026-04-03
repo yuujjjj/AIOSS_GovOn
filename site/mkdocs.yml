@@ -1,4 +1,4 @@
-site_name: "GovOn - On-Device AI 민원 처리 시스템"
+site_name: "GovOn - Agentic Administrative Shell"
 site_url: https://govon-org.github.io/GovOn/
 repo_url: https://github.com/GovOn-Org/GovOn
 repo_name: GovOn-Org/GovOn
@@ -61,22 +61,20 @@ markdown_extensions:
 
 nav:
   - 홈: index.md
-  - 발표자료:
-      - GovOn 프로젝트 발표자료: presentation.md
-      - AI 기본계획 (2026~2028): national-presentation.md
   - 아키텍처:
+      - 개요: architecture/overview.md
       - ADR: architecture/adr/index.md
       - 모델 카드: architecture/model-card.md
   - 개발 가이드:
       - 개발 규칙: guide/development.md
+  - 배포:
+      - 배포 아키텍처: deployment/architecture.md
   - CI/CD:
       - 파이프라인 개요: cicd/overview.md
       - 워크플로우 상세: cicd/workflows.md
       - 테스트 전략: cicd/testing.md
       - DORA 메트릭: cicd/dora.md
       - 보안 스캔: cicd/security.md
-  - 배포:
-      - 인프라 아키텍처: deployment/architecture.md
   - 마일스톤:
       - 개요: milestones/index.md
       - M2 핵심 기능 MVP: milestones/m2.md
