@@ -726,8 +726,7 @@ class vLLMEngineManager:
         # AgentLoop의 tool_registry는 ToolType -> callable 매핑이므로
         # str key로 변환한다
         return {
-            str(k.value if hasattr(k, "value") else k): v
-            for k, v in self.agent_loop._tool_registry.items()
+            str(k.value if hasattr(k, "value") else k): v for k, v in self.agent_loop._tools.items()
         }
 
     def _init_graph(self) -> None:
