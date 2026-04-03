@@ -4,6 +4,7 @@ Alembic 환경 설정.
 DATABASE_URL 환경변수를 통해 PostgreSQL 연결 문자열을 주입받는다.
 """
 
+# isort:skip_file
 import logging
 import os
 import sys
