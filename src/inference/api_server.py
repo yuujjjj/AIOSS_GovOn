@@ -138,7 +138,9 @@ class vLLMEngineManager:
         self.session_store = SessionStore()
         self.agent_manager = AgentManager(AGENTS_DIR)
         self.agent_loop: Optional[AgentLoop] = None
+        self.graph = None  # LangGraph CompiledGraph (v2 엔드포인트용)
         self._init_agent_loop()
+        self._init_graph()
 
     async def initialize(self):
         if SKIP_MODEL_LOAD:
@@ -704,6 +706,70 @@ class vLLMEngineManager:
         }
         self.agent_loop = AgentLoop(tool_registry=tool_registry)
 
+    def _build_tool_registry(self) -> Dict[str, Any]:
+        """tool registry를 str key dict로 반환한다.
+
+        기존 _init_agent_loop에서 정의한 tool 함수들을
+        str 키(ToolType.value)로 매핑하여 반환한다.
+        RegistryExecutorAdapter에서 사용한다.
+        """
+        if self.agent_loop is None:
+            return {}
+        # AgentLoop의 tool_registry는 ToolType -> callable 매핑이므로
+        # str key로 변환한다
+        return {
+            str(k.value if hasattr(k, "value") else k): v
+            for k, v in self.agent_loop._tool_registry.items()
+        }
+
+    def _init_graph(self) -> None:
+        """LangGraph StateGraph를 초기화한다.
+
+        MVP에서는 RegexPlannerAdapter(정규식 기반 fallback)와
+        RegistryExecutorAdapter(기존 tool_registry 재사용)를 사용한다.
+        checkpoint는 MemorySaver를 기본으로 사용하며,
+        GOVON_HOME 환경변수로 AsyncSqliteSaver 경로를 설정할 수 있다.
+        """
+        try:
+            from src.inference.graph.builder import build_govon_graph
+            from src.inference.graph.executor_adapter import RegistryExecutorAdapter
+            from src.inference.graph.planner_adapter import RegexPlannerAdapter
+        except ImportError as exc:
+            logger.warning(f"LangGraph graph 초기화 실패 (import 오류): {exc}")
+            return
+
+        tool_registry = self._build_tool_registry()
+        planner = RegexPlannerAdapter()
+        executor = RegistryExecutorAdapter(
+            tool_registry=tool_registry,
+            session_store=self.session_store,
+        )
+
+        # checkpoint: AsyncSqliteSaver 또는 MemorySaver
+        checkpointer = None
+        try:
+            import os
+            from pathlib import Path
+
+            from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+            checkpoint_db = str(
+                Path(os.getenv("GOVON_HOME", str(Path.home() / ".govon")))
+                / "graph_checkpoints.sqlite3"
+            )
+            checkpointer = AsyncSqliteSaver.from_conn_string(checkpoint_db)
+            logger.info(f"LangGraph checkpoint: {checkpoint_db}")
+        except Exception as exc:
+            logger.warning(f"AsyncSqliteSaver 초기화 실패, MemorySaver 사용: {exc}")
+
+        self.graph = build_govon_graph(
+            planner_adapter=planner,
+            executor_adapter=executor,
+            session_store=self.session_store,
+            checkpointer=checkpointer,
+        )
+        logger.info("LangGraph graph 초기화 완료")
+
 
 manager = vLLMEngineManager()
 
@@ -1024,6 +1090,99 @@ async def agent_stream(
             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(stream_events(), media_type="text/event-stream")
+
+
+# ---------------------------------------------------------------------------
+# v2 엔드포인트: LangGraph 기반 agent 실행 (interrupt/approve 패턴)
+# ---------------------------------------------------------------------------
+
+
+@app.post("/v2/agent/run")
+async def v2_agent_run(
+    request: AgentRunRequest,
+    _: None = Depends(verify_api_key),
+):
+    """LangGraph 기반 agent 실행 (1단계: interrupt까지).
+
+    graph를 실행하여 `approval_wait` 노드에서 interrupt되면
+    `status: awaiting_approval`과 함께 승인 요청 정보를 반환한다.
+
+    클라이언트는 반환된 `thread_id`를 저장해두고
+    `/v2/agent/approve`로 승인/거절을 전달해야 한다.
+    """
+    if not manager.graph:
+        raise HTTPException(status_code=503, detail="LangGraph graph가 초기화되지 않았습니다.")
+
+    from langchain_core.messages import HumanMessage
+
+    thread_id = request.session_id or str(uuid.uuid4())
+    config = {"configurable": {"thread_id": thread_id}}
+    initial_state = {
+        "session_id": request.session_id,
+        "request_id": str(uuid.uuid4()),
+        "messages": [HumanMessage(content=request.query)],
+    }
+
+    # graph.ainvoke()는 interrupt()에서 멈추고 중간 상태를 반환
+    await manager.graph.ainvoke(initial_state, config=config)
+
+    # interrupt 상태 확인
+    graph_state = await manager.graph.aget_state(config)
+    if graph_state.next:
+        # interrupt 대기 중: approval_request 정보를 클라이언트에 반환
+        approval_value = None
+        if graph_state.tasks and graph_state.tasks[0].interrupts:
+            approval_value = graph_state.tasks[0].interrupts[0].value
+        return {
+            "status": "awaiting_approval",
+            "thread_id": thread_id,
+            "approval_request": approval_value,
+        }
+
+    # interrupt 없이 완료된 경우 (rejected 또는 오류)
+    final_state = graph_state.values
+    return {
+        "status": "completed",
+        "thread_id": thread_id,
+        "text": final_state.get("final_text", ""),
+    }
+
+
+@app.post("/v2/agent/approve")
+async def v2_agent_approve(
+    thread_id: str,
+    approved: bool,
+    _: None = Depends(verify_api_key),
+):
+    """interrupt된 graph를 resume한다 (2단계: 승인/거절).
+
+    Parameters
+    ----------
+    thread_id : str
+        `/v2/agent/run`에서 반환된 thread_id.
+    approved : bool
+        True면 tool_execute로 진행, False면 graph가 END로 종료.
+    """
+    if not manager.graph:
+        raise HTTPException(status_code=503, detail="LangGraph graph가 초기화되지 않았습니다.")
+
+    from langgraph.types import Command
+
+    config = {"configurable": {"thread_id": thread_id}}
+
+    # resume: interrupt()의 반환값으로 사용자 응답 전달
+    result = await manager.graph.ainvoke(
+        Command(resume={"approved": approved}),
+        config=config,
+    )
+
+    return {
+        "status": "completed",
+        "thread_id": thread_id,
+        "text": result.get("final_text", ""),
+        "tool_results": result.get("tool_results", {}),
+        "approval_status": result.get("approval_status", ""),
+    }
 
 
 if __name__ == "__main__":
