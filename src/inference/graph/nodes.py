@@ -5,9 +5,9 @@ Issue #415: LangGraph runtime 기반 및 planner/executor adapter 구성.
 6개 노드를 정의한다:
   session_load -> planner -> approval_wait -> tool_execute -> synthesis -> persist
 
-각 노드는 `GovOnGraphState`를 입력으로 받고 상태 업데이트 dict를 반환하는
-async 함수다. `approval_wait` 노드는 `interrupt()`를 사용하여
-human-in-the-loop 승인 대기 상태로 전환한다.
+각 노드는 `GovOnGraphState`를 입력으로 받고 상태 업데이트 dict를 반환한다.
+I/O가 필요한 노드는 async 함수이며, `approval_wait` 노드는 `interrupt()`를
+사용하는 human-in-the-loop 승인 게이트이므로 sync 함수로 유지한다.
 """
 
 from __future__ import annotations
@@ -107,7 +107,7 @@ async def planner_node(
     }
 
 
-async def approval_wait_node(state: GovOnGraphState) -> dict:
+def approval_wait_node(state: GovOnGraphState) -> dict:
     """Human-in-the-loop 승인 게이트.
 
     `interrupt()`를 호출하여 graph 실행을 일시 정지한다.

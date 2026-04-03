@@ -1121,11 +1121,11 @@ async def v2_agent_run(
         "messages": [HumanMessage(content=request.query)],
     }
 
-    # graph.ainvoke()는 interrupt()에서 멈추고 중간 상태를 반환
-    await manager.graph.ainvoke(initial_state, config=config)
+    # interrupt()는 sync invoke 경로에서 가장 안정적으로 동작한다.
+    await asyncio.to_thread(manager.graph.invoke, initial_state, config)
 
     # interrupt 상태 확인
-    graph_state = await manager.graph.aget_state(config)
+    graph_state = await asyncio.to_thread(manager.graph.get_state, config)
     if graph_state.next:
         # interrupt 대기 중: approval_request 정보를 클라이언트에 반환
         approval_value = None
@@ -1168,10 +1168,11 @@ async def v2_agent_approve(
 
     config = {"configurable": {"thread_id": thread_id}}
 
-    # resume: interrupt()의 반환값으로 사용자 응답 전달
-    result = await manager.graph.ainvoke(
+    # resume도 동일한 sync invoke 경로로 처리한다.
+    result = await asyncio.to_thread(
+        manager.graph.invoke,
         Command(resume={"approved": approved}),
-        config=config,
+        config,
     )
 
     return {

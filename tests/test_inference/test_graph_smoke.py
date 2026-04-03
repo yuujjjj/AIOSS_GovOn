@@ -99,8 +99,7 @@ class TestGraphSmoke:
         # START와 END는 별도이므로 expected가 node_names의 부분집합인지 확인
         assert expected.issubset(node_names), f"누락된 노드: {expected - node_names}"
 
-    @pytest.mark.asyncio
-    async def test_graph_runs_to_approval_interrupt(self, graph):
+    def test_graph_runs_to_approval_interrupt(self, graph):
         """graph가 approval_wait 노드에서 interrupt된다.
 
         planner 실행 후 graph가 approval_wait에서 멈추고
@@ -113,14 +112,13 @@ class TestGraphSmoke:
             "messages": [HumanMessage(content="이 민원에 대한 답변 초안 작성해줘")],
         }
 
-        await graph.ainvoke(initial, config=config)
+        graph.invoke(initial, config=config)
 
         # interrupt 상태 확인: graph가 approval_wait에서 멈춰있어야 한다
-        state = await graph.aget_state(config)
+        state = graph.get_state(config)
         assert state.next, "graph가 approval_wait에서 interrupt되어야 합니다"
 
-    @pytest.mark.asyncio
-    async def test_graph_completes_after_approval(self, graph):
+    def test_graph_completes_after_approval(self, graph):
         """승인 후 graph가 끝까지 실행되고 final_text가 생성된다.
 
         1단계: interrupt까지 실행
@@ -136,10 +134,10 @@ class TestGraphSmoke:
         }
 
         # 1단계: interrupt까지 실행
-        await graph.ainvoke(initial, config=config)
+        graph.invoke(initial, config=config)
 
         # 2단계: 승인으로 resume
-        result = await graph.ainvoke(
+        result = graph.invoke(
             Command(resume={"approved": True}),
             config=config,
         )
@@ -149,8 +147,7 @@ class TestGraphSmoke:
             result.get("approval_status") == ApprovalStatus.APPROVED.value
         ), f"approval_status가 APPROVED여야 합니다. 실제: {result.get('approval_status')}"
 
-    @pytest.mark.asyncio
-    async def test_graph_ends_on_rejection(self, graph):
+    def test_graph_ends_on_rejection(self, graph):
         """거절 시 graph가 tool_execute 없이 종료된다.
 
         1단계: interrupt까지 실행
@@ -166,10 +163,10 @@ class TestGraphSmoke:
         }
 
         # 1단계: interrupt까지 실행
-        await graph.ainvoke(initial, config=config)
+        graph.invoke(initial, config=config)
 
         # 2단계: 거절로 resume
-        result = await graph.ainvoke(
+        result = graph.invoke(
             Command(resume={"approved": False}),
             config=config,
         )

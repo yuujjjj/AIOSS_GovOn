@@ -13,6 +13,7 @@ Graph topology:
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Optional
 
 from langgraph.graph import END, START, StateGraph
@@ -89,23 +90,33 @@ def build_govon_graph(
 
     # --- 노드 등록 (closure로 adapter와 session_store 주입) ---
 
-    async def _session_load(state: GovOnGraphState) -> dict:
-        return await session_load_node(state, session_store=session_store)
+    def _run_async(coro):
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(coro)
+        raise RuntimeError("GovOn graph sync wrappers must run outside an active event loop.")
 
-    async def _planner(state: GovOnGraphState) -> dict:
-        return await planner_node(state, planner_adapter=planner_adapter)
+    def _session_load(state: GovOnGraphState) -> dict:
+        return _run_async(session_load_node(state, session_store=session_store))
 
-    async def _tool_execute(state: GovOnGraphState) -> dict:
-        return await tool_execute_node(state, executor_adapter=executor_adapter)
+    def _planner(state: GovOnGraphState) -> dict:
+        return _run_async(planner_node(state, planner_adapter=planner_adapter))
 
-    async def _persist(state: GovOnGraphState) -> dict:
-        return await persist_node(state, session_store=session_store)
+    def _tool_execute(state: GovOnGraphState) -> dict:
+        return _run_async(tool_execute_node(state, executor_adapter=executor_adapter))
+
+    def _synthesis(state: GovOnGraphState) -> dict:
+        return _run_async(synthesis_node(state))
+
+    def _persist(state: GovOnGraphState) -> dict:
+        return _run_async(persist_node(state, session_store=session_store))
 
     graph.add_node("session_load", _session_load)
     graph.add_node("planner", _planner)
     graph.add_node("approval_wait", approval_wait_node)
     graph.add_node("tool_execute", _tool_execute)
-    graph.add_node("synthesis", synthesis_node)
+    graph.add_node("synthesis", _synthesis)
     graph.add_node("persist", _persist)
 
     # --- 엣지 ---
