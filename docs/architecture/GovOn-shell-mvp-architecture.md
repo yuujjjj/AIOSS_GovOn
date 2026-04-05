@@ -28,6 +28,7 @@ The CLI is the user surface. The daemon is the execution engine.
 - Natural-language interactive CLI shell
 - Local daemon auto-start and reconnect
 - LangGraph state graph runtime for planner, approval, execution, synthesis
+- LLM-based tool selection via LLMPlannerAdapter (vLLM OpenAI-compatible endpoint)
 - Task-scoped approval gate before tool execution
 - Local RAG search against a configured folder
 - External API lookup through a unified tool surface

@@ -60,7 +60,7 @@ class ToolPlan:
     reason: str
     tools: List[str]
     tool_summaries: Optional[List[str]] = field(default=None)
-    adapter_mode: str = "regex"  # "regex" | "llm"
+    adapter_mode: str = "llm"  # "llm" | "regex" (CI fallback)
 
     def __post_init__(self) -> None:
         if self.tool_summaries is None:

@@ -864,8 +864,9 @@ class vLLMEngineManager:
     def _init_graph(self, checkpointer: Optional[object] = None) -> None:
         """LangGraph StateGraph를 초기화한다.
 
-        MVP에서는 RegexPlannerAdapter(정규식 기반 fallback)와
-        RegistryExecutorAdapter(기존 tool_registry 재사용)를 사용한다.
+        운영 환경에서는 LLMPlannerAdapter(vLLM OpenAI-compatible endpoint)를 사용한다.
+        SKIP_MODEL_LOAD=true 환경(CI/테스트)에서는 RegexPlannerAdapter가 CI fallback으로 동작한다.
+        RegistryExecutorAdapter는 기존 tool_registry를 재사용한다.
 
         Parameters
         ----------
@@ -879,13 +880,37 @@ class vLLMEngineManager:
         try:
             from src.inference.graph.builder import build_govon_graph
             from src.inference.graph.executor_adapter import RegistryExecutorAdapter
-            from src.inference.graph.planner_adapter import RegexPlannerAdapter
+            from src.inference.graph.planner_adapter import LLMPlannerAdapter
         except ImportError as exc:
             logger.warning(f"LangGraph graph 초기화 실패 (import 오류): {exc}")
             return
 
         tool_registry = self._build_tool_registry()
-        planner = RegexPlannerAdapter(registry=tool_registry)
+
+        if SKIP_MODEL_LOAD:
+            # CI/테스트 환경: LLM이 없으므로 RegexPlannerAdapter를 CI fallback으로 사용
+            from src.inference.graph.planner_adapter import RegexPlannerAdapter
+
+            planner = RegexPlannerAdapter(registry=tool_registry)
+        else:
+            # 운영 환경: vLLM OpenAI-compatible endpoint를 LLMPlannerAdapter로 연결
+            from langchain_openai import ChatOpenAI
+
+            planner_base_url = os.getenv(
+                "LANGGRAPH_MODEL_BASE_URL",
+                f"http://127.0.0.1:{runtime_config.port}/v1",
+            )
+            planner_api_key = os.getenv("LANGGRAPH_MODEL_API_KEY", "EMPTY")
+            planner_model = os.getenv(
+                "LANGGRAPH_PLANNER_MODEL", runtime_config.model.model_path
+            )
+            llm = ChatOpenAI(
+                base_url=planner_base_url,
+                api_key=planner_api_key,
+                model=planner_model,
+                temperature=0.0,
+            )
+            planner = LLMPlannerAdapter(llm=llm, registry=tool_registry)
         executor = RegistryExecutorAdapter(
             tool_registry=tool_registry,
             session_store=self.session_store,

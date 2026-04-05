@@ -128,14 +128,14 @@ class TestToolPlanValidator:
         assert result is plan
 
     def test_adapter_mode_default(self) -> None:
-        """ToolPlan의 adapter_mode 기본값이 'regex'이다."""
+        """ToolPlan의 adapter_mode 기본값이 'llm'이다 (운영 기본은 LLMPlannerAdapter)."""
         plan = ToolPlan(
             task_type=TaskType.DRAFT_RESPONSE,
             goal="테스트",
             reason="테스트",
             tools=["rag_search"],
         )
-        assert plan.adapter_mode == "regex"
+        assert plan.adapter_mode == "llm"
 
     def test_adapter_mode_custom(self) -> None:
         """ToolPlan의 adapter_mode를 'llm'으로 설정할 수 있다."""

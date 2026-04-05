@@ -575,16 +575,18 @@ class LLMPlannerAdapter(PlannerAdapter):
         return "\n\n".join(parts)
 ```
 
-### 5.4 Fallback 구현체: RegexPlannerAdapter
+### 5.4 CI Fallback: RegexPlannerAdapter (운영: LLMPlannerAdapter)
 
-기존 `ToolRouter` 로직을 `PlannerAdapter` 인터페이스로 래핑한다. LLM 없이도 graph가 동작하도록 보장.
+운영 환경에서는 `LLMPlannerAdapter`가 기본 planner로 동작한다.
+`RegexPlannerAdapter`는 CI/테스트 환경(`SKIP_MODEL_LOAD=true`)에서 LLM 없이
+graph가 동작하도록 보장하는 fallback 전용 구현체다.
 
 ```python
 class RegexPlannerAdapter(PlannerAdapter):
     """기존 정규식 ToolRouter를 PlannerAdapter 인터페이스로 래핑.
 
-    LLM planner가 실패하거나 사용 불가할 때 fallback.
-    smoke test에서도 사용한다.
+    CI fallback 전용: SKIP_MODEL_LOAD=true 환경에서 LLM 없이 graph를 실행한다.
+    운영 환경에서는 LLMPlannerAdapter가 도구를 선택한다.
     """
 
     def __init__(self) -> None:
@@ -793,13 +795,17 @@ class vLLMEngineManager:
     def _init_graph(self) -> None:
         """LangGraph StateGraph를 초기화한다."""
         from src.inference.graph.builder import build_govon_graph
-        from src.inference.graph.planner_adapter import RegexPlannerAdapter
+        from src.inference.graph.planner_adapter import LLMPlannerAdapter
         from src.inference.graph.executor_adapter import RegistryExecutorAdapter
 
         # 기존 _init_agent_loop에서 생성한 tool_registry를 재사용
         tool_registry = self._build_tool_registry()
 
-        planner = RegexPlannerAdapter()  # MVP 초기에는 regex fallback 사용
+        # 운영: LLMPlannerAdapter (CI fallback: SKIP_MODEL_LOAD=true 시 RegexPlannerAdapter)
+        from langchain_openai import ChatOpenAI
+        llm = ChatOpenAI(base_url="http://127.0.0.1:8000/v1", api_key="EMPTY",
+                         model=MODEL_PATH, temperature=0.0)
+        planner = LLMPlannerAdapter(llm=llm, registry=tool_registry)
         executor = RegistryExecutorAdapter(
             tool_registry=tool_registry,
             session_store=self.session_store,
@@ -1024,8 +1030,9 @@ class StubExecutorAdapter(ExecutorAdapter):
 
 @pytest.fixture
 def graph():
-    """RegexPlannerAdapter + StubExecutor로 graph를 구성."""
-    planner = RegexPlannerAdapter()
+    """CI fallback: RegexPlannerAdapter + StubExecutor로 graph를 구성.
+    실제 운영은 LLMPlannerAdapter를 사용한다."""
+    planner = RegexPlannerAdapter()  # CI fallback: 실제 운영은 LLMPlannerAdapter
     executor = StubExecutorAdapter()
     store = SessionStore(db_path=":memory:")
     return build_govon_graph(

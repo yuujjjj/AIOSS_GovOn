@@ -6,7 +6,8 @@ Issue #415: LangGraph runtime 기반 및 planner/executor adapter 구성.
 - `build_govon_graph`: StateGraph 빌더 함수
 - `GovOnGraphState`: graph state TypedDict
 - `ApprovalStatus`, `TaskType`, `ToolPlan`: state 관련 타입
-- `PlannerAdapter`, `RegexPlannerAdapter`, `LLMPlannerAdapter`: planner 추상화
+- `PlannerAdapter`, `LLMPlannerAdapter`: planner 추상화 (LLMPlannerAdapter가 기본)
+- `RegexPlannerAdapter`: CI fallback planner (SKIP_MODEL_LOAD=true 환경 전용)
 - `ExecutorAdapter`, `RegistryExecutorAdapter`: executor 추상화
 """
 

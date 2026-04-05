@@ -21,7 +21,7 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from src.inference.graph.builder import build_govon_graph
 from src.inference.graph.executor_adapter import ExecutorAdapter
-from src.inference.graph.planner_adapter import RegexPlannerAdapter
+from src.inference.graph.planner_adapter import RegexPlannerAdapter  # CI fallback: 실제 운영은 LLMPlannerAdapter
 from src.inference.graph.state import ApprovalStatus, GovOnGraphState
 from src.inference.session_context import SessionStore
 
@@ -87,12 +87,14 @@ def session_store(tmp_path):
 
 @pytest.fixture
 def graph(session_store):
-    """RegexPlannerAdapter + StubExecutorAdapter로 graph를 구성한다.
+    """CI fallback: RegexPlannerAdapter + StubExecutorAdapter로 graph를 구성한다.
 
+    실제 운영은 LLMPlannerAdapter를 사용하며, CI(SKIP_MODEL_LOAD=true) 환경에서는
+    LLM 없이 RegexPlannerAdapter를 fallback으로 사용한다.
     MemorySaver를 checkpointer로 사용하므로 LangGraph checkpoint 파일이 생성되지 않는다.
     임시 SessionStore를 사용하여 테스트 간 격리를 보장한다.
     """
-    planner = RegexPlannerAdapter()
+    planner = RegexPlannerAdapter()  # CI fallback: 실제 운영은 LLMPlannerAdapter
     executor = StubExecutorAdapter()
     return build_govon_graph(
         planner_adapter=planner,
@@ -317,7 +319,7 @@ class TestGraphSmoke:
             "도로 보수 접수를 진행하겠습니다. 담당 부서 검토 후 보수 일정을 안내드리겠습니다.",
         )
 
-        planner = RegexPlannerAdapter()
+        planner = RegexPlannerAdapter()  # CI fallback: 실제 운영은 LLMPlannerAdapter
         executor = RecordingExecutorAdapter()
         graph = build_govon_graph(
             planner_adapter=planner,

@@ -22,7 +22,7 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from src.inference.graph.builder import build_govon_graph
 from src.inference.graph.executor_adapter import ExecutorAdapter
-from src.inference.graph.planner_adapter import RegexPlannerAdapter
+from src.inference.graph.planner_adapter import RegexPlannerAdapter  # CI fallback: 실제 운영은 LLMPlannerAdapter
 from src.inference.graph.state import ApprovalStatus
 from src.inference.session_context import SessionStore
 
@@ -69,7 +69,7 @@ def _build_graph_with_sqlite(cp_db_path: str, session_store: SessionStore):
         pytest.skip("langgraph-checkpoint-sqlite 미설치 — SqliteSaver 테스트 건너뜀")
 
     return build_govon_graph(
-        planner_adapter=RegexPlannerAdapter(),
+        planner_adapter=RegexPlannerAdapter(),  # CI fallback: 실제 운영은 LLMPlannerAdapter
         executor_adapter=StubExecutorAdapter(),
         session_store=session_store,
         checkpointer=checkpointer,
@@ -103,7 +103,7 @@ class TestRestartSafeGraphCheckpoint:
         conn1 = sqlite3.connect(cp_db, check_same_thread=False)
         saver1 = SqliteSaver(conn1)
         graph1 = build_govon_graph(
-            planner_adapter=RegexPlannerAdapter(),
+            planner_adapter=RegexPlannerAdapter(),  # CI fallback: 실제 운영은 LLMPlannerAdapter
             executor_adapter=StubExecutorAdapter(),
             session_store=session_store,
             checkpointer=saver1,
@@ -122,7 +122,7 @@ class TestRestartSafeGraphCheckpoint:
         conn2 = sqlite3.connect(cp_db, check_same_thread=False)
         saver2 = SqliteSaver(conn2)
         graph2 = build_govon_graph(
-            planner_adapter=RegexPlannerAdapter(),
+            planner_adapter=RegexPlannerAdapter(),  # CI fallback: 실제 운영은 LLMPlannerAdapter
             executor_adapter=StubExecutorAdapter(),
             session_store=session_store,
             checkpointer=saver2,
@@ -162,7 +162,7 @@ class TestRestartSafeGraphCheckpoint:
         # 완료까지 실행
         conn1 = sqlite3.connect(cp_db, check_same_thread=False)
         graph1 = build_govon_graph(
-            planner_adapter=RegexPlannerAdapter(),
+            planner_adapter=RegexPlannerAdapter(),  # CI fallback: 실제 운영은 LLMPlannerAdapter
             executor_adapter=StubExecutorAdapter(),
             session_store=session_store,
             checkpointer=SqliteSaver(conn1),
@@ -181,7 +181,7 @@ class TestRestartSafeGraphCheckpoint:
         # 새 인스턴스에서 최종 상태 확인: next가 비어야 한다 (완료)
         conn2 = sqlite3.connect(cp_db, check_same_thread=False)
         graph2 = build_govon_graph(
-            planner_adapter=RegexPlannerAdapter(),
+            planner_adapter=RegexPlannerAdapter(),  # CI fallback: 실제 운영은 LLMPlannerAdapter
             executor_adapter=StubExecutorAdapter(),
             session_store=session_store,
             checkpointer=SqliteSaver(conn2),

@@ -69,7 +69,8 @@ def build_govon_graph(
     ----------
     planner_adapter : PlannerAdapter
         planner 어댑터 인스턴스.
-        MVP에서는 `RegexPlannerAdapter`를 사용한다.
+        운영 환경에서는 `LLMPlannerAdapter`를 사용한다.
+        CI 환경에서는 `RegexPlannerAdapter`가 fallback으로 동작한다.
     executor_adapter : ExecutorAdapter
         tool executor 어댑터 인스턴스.
     session_store : SessionStore

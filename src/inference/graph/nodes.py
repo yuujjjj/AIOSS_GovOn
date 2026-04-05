@@ -80,7 +80,8 @@ async def planner_node(
     """Planner 노드.
 
     PlannerAdapter를 호출하여 구조화된 실행 계획을 생성한다.
-    MVP에서는 RegexPlannerAdapter가 기본으로 사용된다.
+    LLMPlannerAdapter가 기본으로 사용된다. SKIP_MODEL_LOAD=true 환경에서는
+    RegexPlannerAdapter가 CI fallback으로 동작한다.
 
     Parameters
     ----------
@@ -107,7 +108,7 @@ async def planner_node(
         return {
             **validator.make_fallback_plan(e),
             "task_type": "",
-            "adapter_mode": "regex",
+            "adapter_mode": "llm",
         }
 
     logger.info(

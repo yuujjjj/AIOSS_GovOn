@@ -61,7 +61,7 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from src.inference.graph.builder import build_govon_graph
 from src.inference.graph.executor_adapter import ExecutorAdapter
-from src.inference.graph.planner_adapter import RegexPlannerAdapter
+from src.inference.graph.planner_adapter import RegexPlannerAdapter  # CI fallback: 실제 운영은 LLMPlannerAdapter
 from src.inference.session_context import SessionStore
 
 # ---------------------------------------------------------------------------
@@ -112,13 +112,15 @@ def _parse_sse_events(sse_text: str) -> list[dict]:
 def setup_real_graph(tmp_path):
     """실제 graph를 app의 manager에 주입한다.
 
-    RegexPlannerAdapter + StubExecutorAdapter + MemorySaver를 사용한다.
+    CI fallback: RegexPlannerAdapter + StubExecutorAdapter + MemorySaver를 사용한다.
+    실제 운영은 LLMPlannerAdapter를 사용하며, CI(SKIP_MODEL_LOAD=true) 환경에서는
+    LLM 없이 RegexPlannerAdapter를 fallback으로 사용한다.
     각 테스트마다 격리된 SQLite 파일을 사용한다.
     """
     original_graph = manager.graph
     original_session_store = manager.session_store
 
-    planner = RegexPlannerAdapter()
+    planner = RegexPlannerAdapter()  # CI fallback: 실제 운영은 LLMPlannerAdapter
     executor = StubExecutorAdapter()
     session_store = SessionStore(db_path=str(tmp_path / "e2e.sqlite3"))
 
