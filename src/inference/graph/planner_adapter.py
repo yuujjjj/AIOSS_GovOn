@@ -15,6 +15,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional, Sequence
 
 from langchain_core.messages import AnyMessage
+from loguru import logger
 
 from .capabilities.registry import get_mvp_capability_ids
 from .state import TaskType, ToolPlan
