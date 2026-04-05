@@ -61,9 +61,9 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from src.inference.graph.builder import build_govon_graph
 from src.inference.graph.executor_adapter import ExecutorAdapter
-from src.inference.graph.planner_adapter import (
+from src.inference.graph.planner_adapter import (  # CI fallback: 실제 운영은 LLMPlannerAdapter
     RegexPlannerAdapter,
-)  # CI fallback: 실제 운영은 LLMPlannerAdapter
+)
 from src.inference.session_context import SessionStore
 
 # ---------------------------------------------------------------------------

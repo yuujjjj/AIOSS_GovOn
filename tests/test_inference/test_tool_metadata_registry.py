@@ -284,12 +284,14 @@ class TestPlanValidatorIntegration:
 
 
 class TestPlannerAdapterIntegration:
-    """LLMPlannerAdapter.AVAILABLE_TOOLS가 registry와 일치하는지 검증."""
+    """LLMPlannerAdapter의 system prompt가 registry 도구 목록을 동적 반영하는지 검증."""
 
-    def test_available_tools_match_registry(self):
+    def test_system_prompt_contains_all_registry_tools(self):
         from src.inference.graph.planner_adapter import LLMPlannerAdapter
 
-        assert set(LLMPlannerAdapter.AVAILABLE_TOOLS) == MVP_CAPABILITY_IDS
+        prompt = LLMPlannerAdapter._build_system_prompt()
+        for tool_id in MVP_CAPABILITY_IDS:
+            assert tool_id in prompt, f"system prompt에 {tool_id}가 포함되어야 합니다"
 
 
 # ---------------------------------------------------------------------------
