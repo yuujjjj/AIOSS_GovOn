@@ -1,7 +1,9 @@
 import asyncio
 import json
 import os
+import queue
 import re
+import threading
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -1311,6 +1313,118 @@ async def agent_stream(
 # ---------------------------------------------------------------------------
 # v2 엔드포인트: LangGraph 기반 agent 실행 (interrupt/approve 패턴)
 # ---------------------------------------------------------------------------
+
+
+@app.post("/v2/agent/stream")
+async def v2_agent_stream(
+    request: AgentRunRequest,
+    _: None = Depends(verify_api_key),
+):
+    """LangGraph 기반 agent SSE 스트리밍 실행.
+
+    graph.stream()을 asyncio.to_thread()로 감싸 노드별 완료 이벤트를 SSE로 전송한다.
+
+    이벤트 형식 (각 줄: ``data: <JSON>\\n\\n``):
+      - 노드 진행: ``{"node": "<name>", "status": "completed", ...}``
+      - approval_wait 도달:
+        ``{"node": "approval_wait", "status": "awaiting_approval",
+           "approval_request": {...}, "thread_id": "..."}``
+      - 오류: ``{"node": "error", "status": "error", "error": "..."}``
+
+    승인 흐름:
+    - 클라이언트는 ``awaiting_approval`` 이벤트 수신 후 스트림이 종료됨을 인지하고
+      ``/v2/agent/approve``로 승인/거절을 전달한다.
+    """
+    if not manager.graph:
+
+        async def _no_graph():
+            yield 'data: {"node": "error", "status": "error", "error": "LangGraph graph가 초기화되지 않았습니다."}\n\n'
+
+        return StreamingResponse(_no_graph(), media_type="text/event-stream")
+
+    from langchain_core.messages import HumanMessage
+
+    thread_id = request.session_id or str(uuid.uuid4())
+    session_id = thread_id
+    request_id = str(uuid.uuid4())
+    config = {"configurable": {"thread_id": thread_id}}
+    initial_state = {
+        "session_id": session_id,
+        "request_id": request_id,
+        "messages": [HumanMessage(content=request.query)],
+    }
+
+    async def _generate() -> AsyncGenerator[str, None]:
+        event_queue: "queue.Queue[dict | None]" = queue.Queue()
+
+        def _stream_in_thread():
+            """graph.stream()을 별도 스레드에서 실행하고 결과를 queue에 넣는다."""
+            try:
+                for chunk in manager.graph.stream(initial_state, config, stream_mode="updates"):
+                    # chunk: {node_name: state_delta}
+                    for node_name, state_delta in chunk.items():
+                        event: dict = {
+                            "node": node_name,
+                            "status": "completed",
+                        }
+                        # approval_wait가 interrupt()를 호출하면 stream이 끝나기 전에
+                        # 이 이벤트가 마지막으로 전송된다.
+                        if node_name == "approval_wait":
+                            # interrupt 상태 확인
+                            try:
+                                graph_state = manager.graph.get_state(config)
+                                if graph_state.next:
+                                    approval_value = None
+                                    if graph_state.tasks and graph_state.tasks[0].interrupts:
+                                        approval_value = graph_state.tasks[0].interrupts[0].value
+                                    event = {
+                                        "node": "approval_wait",
+                                        "status": "awaiting_approval",
+                                        "approval_request": approval_value,
+                                        "thread_id": thread_id,
+                                        "session_id": session_id,
+                                    }
+                            except Exception as exc:
+                                logger.warning(f"[v2/agent/stream] get_state 실패: {exc}")
+                                # get_state 실패해도 approval_wait 이벤트는 전송
+                                event["status"] = "awaiting_approval"
+                                event["approval_request"] = {
+                                    "prompt": "승인 정보를 불러올 수 없습니다. /v2/agent/approve로 진행하세요."
+                                }
+                        event_queue.put(event)
+            except Exception as exc:
+                logger.error(f"[v2/agent/stream] 스레드 예외: {exc}")
+                event_queue.put({"node": "error", "status": "error", "error": str(exc)})
+            finally:
+                event_queue.put(None)  # sentinel
+
+        thread = threading.Thread(target=_stream_in_thread, daemon=True)
+        thread.start()
+
+        while True:
+            try:
+                event = await asyncio.to_thread(event_queue.get, True, 0.5)
+            except queue.Empty:
+                # timeout — check if thread is still alive
+                if not thread.is_alive() and event_queue.empty():
+                    break
+                continue
+
+            if event is None:
+                # sentinel: stream complete
+                break
+
+            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+            # Stop streaming after awaiting_approval (client must call /v2/agent/approve)
+            if event.get("status") == "awaiting_approval" or event.get("node") == "error":
+                break
+
+        thread.join(timeout=1.0)
+        if thread.is_alive():
+            logger.warning("[v2/agent/stream] 스트리밍 스레드가 1초 내에 종료되지 않았습니다.")
+
+    return StreamingResponse(_generate(), media_type="text/event-stream")
 
 
 @app.post("/v2/agent/run")
