@@ -97,7 +97,7 @@ inference = [
     "rank-bm25>=0.2.2",
     "sentence-transformers>=3.0.0",
     "faiss-cpu>=1.7.4",
-    "langgraph==1.1.4",
+    "langgraph==1.1.6",
     "langgraph-checkpoint==4.0.1",
     "langgraph-checkpoint-sqlite==3.0.3",
     "langchain-core>=1.2.0,<2.0.0",
