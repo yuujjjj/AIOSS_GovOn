@@ -894,6 +894,9 @@ class vLLMEngineManager:
             planner = RegexPlannerAdapter(registry=tool_registry)
         else:
             # 운영 환경: vLLM OpenAI-compatible endpoint를 LLMPlannerAdapter로 연결
+            # NOTE: ChatOpenAI는 lazy connection이므로 생성 시점에 vLLM이 미시작이어도 안전하다.
+            # 실제 LLM 호출은 graph invoke 시점에 발생하며,
+            # 그때는 lifespan에서 vLLM이 이미 시작된 상태다.
             from langchain_openai import ChatOpenAI
 
             planner_base_url = os.getenv(
@@ -901,9 +904,7 @@ class vLLMEngineManager:
                 f"http://127.0.0.1:{runtime_config.port}/v1",
             )
             planner_api_key = os.getenv("LANGGRAPH_MODEL_API_KEY", "EMPTY")
-            planner_model = os.getenv(
-                "LANGGRAPH_PLANNER_MODEL", runtime_config.model.model_path
-            )
+            planner_model = os.getenv("LANGGRAPH_PLANNER_MODEL", runtime_config.model.model_path)
             llm = ChatOpenAI(
                 base_url=planner_base_url,
                 api_key=planner_api_key,

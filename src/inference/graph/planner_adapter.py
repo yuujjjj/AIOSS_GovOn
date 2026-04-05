@@ -97,23 +97,25 @@ class LLMPlannerAdapter(PlannerAdapter):
         langchain-openai ChatOpenAI 또는 호환 LLM.
     """
 
-    AVAILABLE_TOOLS = sorted(get_mvp_capability_ids())
-
-    SYSTEM_PROMPT = (
-        "당신은 GovOn 민원 답변 보조 시스템의 작업 계획기입니다.\n"
-        "사용자의 요청을 분석하여 다음 JSON 형식으로 실행 계획을 출력하세요:\n\n"
-        '{"task_type": "<draft_response|revise_response|append_evidence|lookup_stats>",\n'
-        ' "goal": "<사용자에게 보여줄 작업 설명 (한국어, 1-2문장)>",\n'
-        ' "reason": "<이 작업이 필요한 이유 (한국어, 1문장)>",\n'
-        ' "tools": ["<tool1>", "<tool2>", ...]}\n\n'
-        "사용 가능한 도구: rag_search, api_lookup, draft_civil_response, append_evidence\n"
-        "규칙:\n"
-        "- draft_response: rag_search, api_lookup, draft_civil_response 순서\n"
-        "- revise_response: rag_search, api_lookup, draft_civil_response 순서\n"
-        "- append_evidence: rag_search, api_lookup, append_evidence 순서\n"
-        "- lookup_stats: api_lookup 단독\n"
-        "- JSON만 출력하세요. 다른 텍스트 없이.\n"
-    )
+    @staticmethod
+    def _build_system_prompt() -> str:
+        """사용 가능한 도구 목록을 동적으로 반영한 system prompt를 생성한다."""
+        tools = ", ".join(sorted(get_mvp_capability_ids()))
+        return (
+            "당신은 GovOn 민원 답변 보조 시스템의 작업 계획기입니다.\n"
+            "사용자의 요청을 분석하여 다음 JSON 형식으로 실행 계획을 출력하세요:\n\n"
+            '{"task_type": "<draft_response|revise_response|append_evidence|lookup_stats>",\n'
+            ' "goal": "<사용자에게 보여줄 작업 설명 (한국어, 1-2문장)>",\n'
+            ' "reason": "<이 작업이 필요한 이유 (한국어, 1문장)>",\n'
+            ' "tools": ["<tool1>", "<tool2>", ...]}\n\n'
+            f"사용 가능한 도구: {tools}\n"
+            "규칙:\n"
+            "- draft_response: rag_search, api_lookup, draft_civil_response 순서\n"
+            "- revise_response: rag_search, api_lookup, draft_civil_response 순서\n"
+            "- append_evidence: rag_search, api_lookup, append_evidence 순서\n"
+            "- lookup_stats: api_lookup 단독\n"
+            "- JSON만 출력하세요. 다른 텍스트 없이.\n"
+        )
 
     def __init__(self, llm: Any, registry: Optional[Dict[str, Any]] = None) -> None:
         self._llm = llm
@@ -124,25 +126,41 @@ class LLMPlannerAdapter(PlannerAdapter):
         messages: Sequence[AnyMessage],
         context: Dict[str, Any],
     ) -> ToolPlan:
-        """LLM을 호출하여 실행 계획을 생성한다."""
+        """LLM을 호출하여 실행 계획을 생성한다.
+
+        LLM 호출 실패 또는 JSON 파싱 실패 시 PlanValidationError를 raise하여
+        planner_node의 fallback 핸들러가 처리하도록 한다.
+        """
         from langchain_core.messages import HumanMessage, SystemMessage
 
         plan_messages = [
-            SystemMessage(content=self.SYSTEM_PROMPT),
+            SystemMessage(content=self._build_system_prompt()),
             HumanMessage(content=self._build_user_prompt(messages, context)),
         ]
 
-        response = await self._llm.ainvoke(plan_messages)
-        parsed = json.loads(response.content)
+        try:
+            response = await self._llm.ainvoke(plan_messages)
+            content = str(response.content or "")
+            parsed = json.loads(content)
+            tools: list[str] = parsed["tools"]
+            return ToolPlan(
+                task_type=TaskType(parsed["task_type"]),
+                goal=parsed["goal"],
+                reason=parsed["reason"],
+                tools=tools,
+                tool_summaries=_build_tool_summaries(tools, self._registry),
+                adapter_mode="llm",
+            )
+        except (json.JSONDecodeError, KeyError, ValueError, TypeError) as exc:
+            from .plan_validator import PlanValidationError
 
-        tools: list[str] = parsed["tools"]
-        return ToolPlan(
-            task_type=TaskType(parsed["task_type"]),
-            goal=parsed["goal"],
-            reason=parsed["reason"],
-            tools=tools,
-            tool_summaries=_build_tool_summaries(tools, self._registry),
-        )
+            logger.warning(f"[LLMPlanner] LLM 응답 파싱 실패: {exc}")
+            raise PlanValidationError(f"LLM planner 응답 파싱 실패: {exc}") from exc
+        except Exception as exc:
+            from .plan_validator import PlanValidationError
+
+            logger.warning(f"[LLMPlanner] LLM 호출 실패: {exc}")
+            raise PlanValidationError(f"LLM planner 호출 실패: {exc}") from exc
 
     @staticmethod
     def _build_user_prompt(
@@ -192,6 +210,7 @@ class RegexPlannerAdapter(PlannerAdapter):
             reason=execution_plan.reason,
             tools=tools,
             tool_summaries=_build_tool_summaries(tools, self._registry),
+            adapter_mode="regex",
         )
 
     @staticmethod
