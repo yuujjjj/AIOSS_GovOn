@@ -158,6 +158,10 @@ class vLLMEngineManager:
             return
 
         logger.info(f"Initializing vLLM runtime with model: {MODEL_PATH}")
+        # EXAONE 4.0-32B-AWQ 네이티브 tool calling 활성화:
+        #   --enable-auto-tool-choice --tool-call-parser hermes
+        # Multi-LoRA 서빙 시 --enable-lora --lora-modules 옵션 추가
+        # HuggingFace Spaces L4 (24GB VRAM) 기준 ~20GB 점유
         try:
             engine_args = AsyncEngineArgs(
                 model=MODEL_PATH,

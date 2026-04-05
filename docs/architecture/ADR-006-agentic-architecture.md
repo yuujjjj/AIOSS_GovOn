@@ -4,7 +4,7 @@
 Accepted
 
 ## Date
-2026-04-03
+2026-04-05
 
 ## Context
 
@@ -79,13 +79,24 @@ MVP의 정본 라우팅은 정규식 패턴 매칭이 아니다.
 - 설명성 오류 응답을 덧붙이지 않는다.
 - 다음 사용자 입력을 기다린다.
 
-### 6. 민원 답변 작성 시에만 civil-response adapter를 사용한다
+### 6. Multi-LoRA 어댑터는 필요한 task에서만 per-request로 전환한다
 
-Civil-response LoRA adapter는 일반 대화 전체에 항상 붙어 있지 않다.
+베이스 모델은 **LGAI-EXAONE/EXAONE-4.0-32B-AWQ** 단일 vLLM 인스턴스다 (~20GB VRAM).
+LoRA 어댑터는 task 유형에 따라 per-request로 전환하며, 항상 붙어 있지 않다.
 
-- 실제 작성 의도가 명확한 task에서만 사용한다.
-- adapter activation도 task 승인 범위 안에 포함된다.
+- `civil-adapter` (LoRA #1): `draft_civil_response` task에서만 사용
+  - 학습 데이터: umyunsang/govon-civil-response-data (74K건), QLoRA on AWQ base
+- `legal-adapter` (LoRA #2): `append_evidence` task에서만 사용
+  - 학습 데이터: neuralfoundry-coder/korean-legal-instruction-sample (232K건), QLoRA on AWQ base
+- LoRA 없음: `planner`, `rag_search`, `api_lookup`, `synthesis`
+- adapter activation은 task 승인 범위 안에 포함된다.
 - public-doc adapter와 classification adapter는 MVP 범위에서 제외한다.
+
+인프라:
+- 서빙: HuggingFace Spaces L4 (24GB VRAM, $0.80/h)
+- vLLM 옵션: `--enable-auto-tool-choice --tool-call-parser hermes --enable-lora`
+- 학습: HuggingFace Spaces A10G ($1.50/h)
+- CLI 연결: `GOVON_RUNTIME_URL=https://<space>.hf.space`
 
 ### 7. 증거 제시는 후속 보강 작업으로 처리한다
 
@@ -134,3 +145,6 @@ MVP 세션 저장 범위는 다음으로 제한한다.
 - tool registry는 MVP에서 `api_lookup`, `rag_search`, `draft_civil_response`, `append_evidence` 중심으로 재구성한다.
 - LangGraph는 MVP 필수 의존이며, `planner -> approval_wait -> execute -> persist` 경로를 표현하는 정본 런타임으로 사용한다.
 - SQLite는 transcript/tool log를 저장하며, graph 전체 checkpoint를 제품 feature로 노출하지 않는다.
+- planner LLM은 `LLMPlannerAdapter`를 통해 EXAONE 4.0-32B-AWQ 네이티브 tool calling으로 동작한다.
+  CI 환경에서는 `SKIP_MODEL_LOAD=true`를 설정하면 `RegexPlannerAdapter`로 fallback된다.
+- LoRA 어댑터 전환은 vLLM `--enable-lora` 모드로 단일 인스턴스 내에서 per-request 처리한다.

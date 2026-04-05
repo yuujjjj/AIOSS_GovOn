@@ -4,7 +4,7 @@
 
 ## 한 줄 정의
 
-GovOn은 `govon` CLI 셸을 진입점으로 사용하고, 내부의 로컬 FastAPI daemon runtime이 LangGraph agent runtime을 통해 base model, civil-response adapter, API lookup, RAG 검색, SQLite 세션 저장을 조정하는 승인 기반 행정 보조 시스템이다.
+GovOn은 `govon` CLI 셸을 진입점으로 사용하고, 내부의 FastAPI daemon runtime이 LangGraph agent runtime을 통해 EXAONE 4.0-32B-AWQ (단일 vLLM + Multi-LoRA), API lookup, RAG 검색, SQLite 세션 저장을 조정하는 승인 기반 행정 보조 시스템이다.
 
 ## 상위 구조
 
@@ -78,10 +78,22 @@ graph TD
 - tool 호출 orchestration
 - 상태 브로커 역할
 
-### Base model + adapter
+### Base model + Multi-LoRA adapter
 
-- base model: planner와 synthesis에서 의도 파악, 작업 계획, 응답 합성
-- civil-response adapter: 작성 단계에서만 내부적으로 사용
+- base model: **LGAI-EXAONE/EXAONE-4.0-32B-AWQ** (단일 vLLM 인스턴스, ~20GB VRAM)
+  - EXAONE 4.0 네이티브 tool calling 지원 (BFCL 65.2)
+  - planner와 synthesis에서 의도 파악, 작업 계획, 응답 합성
+  - vLLM 서빙: `--enable-auto-tool-choice --tool-call-parser hermes --enable-lora`
+- `civil-adapter` (LoRA #1): `draft_civil_response` 작성 단계에서만 사용
+  - 학습: umyunsang/govon-civil-response-data (74K건), QLoRA on AWQ base
+- `legal-adapter` (LoRA #2): `append_evidence` 단계에서만 사용
+  - 학습: neuralfoundry-coder/korean-legal-instruction-sample (232K건), QLoRA on AWQ base
+
+### 서빙 인프라
+
+- **추론**: HuggingFace Spaces L4 GPU (24GB VRAM, $0.80/h)
+- **LoRA 학습**: HuggingFace Spaces A10G ($1.50/h)
+- **CLI 연결**: `GOVON_RUNTIME_URL=https://<space>.hf.space`
 
 ### Tool registry
 

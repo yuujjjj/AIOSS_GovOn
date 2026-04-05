@@ -1,7 +1,7 @@
 # LangGraph Runtime Design for Issue #415
 
-**Status**: Proposed  
-**Date**: 2026-04-03  
+**Status**: Accepted  
+**Date**: 2026-04-05  
 **Issue**: #415 — [Task 4.0] LangGraph runtime 기반 및 planner/executor adapter 구성  
 **Implements**: ADR-006 Section 3 (Approval-Gated Task Loop) via LangGraph StateGraph  
 **Target Consumer**: engineering-ai-engineer agent (구현 담당)
@@ -12,7 +12,7 @@
 
 ### In Scope (MVP)
 - LangGraph `StateGraph` 기반 6-node graph: `session_load -> planner -> approval_wait -> tool_execute -> synthesis -> persist`
-- Planner adapter interface (LLM-based, regex fallback 대체)
+- Planner adapter interface: `LLMPlannerAdapter` 기본, `RegexPlannerAdapter` CI fallback
 - Executor adapter interface (tool registry 연동)
 - `interrupt()` 기반 human-in-the-loop approval gate
 - `SqliteSaver` 기반 graph checkpoint (GovOn 기존 SQLite와 별도 DB 파일)
@@ -503,12 +503,25 @@ class PlannerAdapter(ABC):
 
 ### 5.3 MVP 구현체: LLMPlannerAdapter
 
+`LLMPlannerAdapter`는 **LGAI-EXAONE/EXAONE-4.0-32B-AWQ**의 네이티브 tool calling을
+vLLM OpenAI-compatible endpoint를 통해 활용하는 기본 planner다.
+
+EXAONE 4.0은 tool calling을 네이티브로 지원한다 (BFCL 65.2).
+vLLM은 `--enable-auto-tool-choice --tool-call-parser hermes` 옵션으로 서빙된다.
+`LLMPlannerAdapter`는 `ChatOpenAI(base_url=..., model=<model_path>)`로 이 endpoint에 연결한다.
+
+per-request LoRA 매핑:
+- `draft_civil_response` task → vLLM에 `civil-adapter` 모델 이름으로 요청
+- `append_evidence` task → vLLM에 `legal-adapter` 모델 이름으로 요청
+- 나머지 (`rag_search`, `api_lookup`, `synthesis`) → base model 사용
+
 ```python
 class LLMPlannerAdapter(PlannerAdapter):
-    """LLM 기반 planner.
+    """EXAONE 4.0-32B-AWQ 네이티브 tool calling 기반 planner.
 
-    langchain-openai ChatOpenAI (또는 호환 모델)를 사용하여
-    사용자 요청을 분석하고 ToolPlan을 생성한다.
+    vLLM OpenAI-compatible endpoint (--enable-auto-tool-choice --tool-call-parser hermes)를
+    통해 LGAI-EXAONE/EXAONE-4.0-32B-AWQ의 tool calling 능력을 활용한다.
+    langchain-openai ChatOpenAI를 사용하여 ToolPlan을 생성한다.
     """
 
     AVAILABLE_TOOLS = ["rag_search", "api_lookup", "draft_civil_response", "append_evidence"]
@@ -575,11 +588,12 @@ class LLMPlannerAdapter(PlannerAdapter):
         return "\n\n".join(parts)
 ```
 
-### 5.4 CI Fallback: RegexPlannerAdapter (운영: LLMPlannerAdapter)
+### 5.4 CI Fallback: RegexPlannerAdapter
 
-운영 환경에서는 `LLMPlannerAdapter`가 기본 planner로 동작한다.
+운영 환경의 기본 planner는 **`LLMPlannerAdapter`** 다.
 `RegexPlannerAdapter`는 CI/테스트 환경(`SKIP_MODEL_LOAD=true`)에서 LLM 없이
 graph가 동작하도록 보장하는 fallback 전용 구현체다.
+운영 배포에서 정규식 기반 라우팅은 사용하지 않는다.
 
 ```python
 class RegexPlannerAdapter(PlannerAdapter):

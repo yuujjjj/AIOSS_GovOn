@@ -1,7 +1,7 @@
 # WORKFLOW: GovOn CLI MVP Task Loop
 
-**Version**: 5.0
-**Date**: 2026-04-03
+**Version**: 5.1
+**Date**: 2026-04-05
 **Status**: Accepted MVP Flow
 **Implements**: GovOn CLI Shell + Local Daemon + LangGraph Approval-Gated Task Loop
 
@@ -12,11 +12,25 @@
 핵심 원칙은 다음과 같다.
 
 - 모든 요청은 먼저 `이번에 해야 할 한 작업`으로 정규화한다.
-- 업무용 tool 선택은 정규식이 아니라 planner LLM이 LangGraph 안에서 결정한다.
+- 업무용 tool 선택은 정규식이 아니라 **EXAONE 4.0-32B-AWQ 네이티브 tool calling**을 활용하는 `LLMPlannerAdapter`가 LangGraph 안에서 결정한다.
 - tool 실행 전에는 항상 사람말 승인 요청을 보여준다.
 - 하나의 task loop 안에서 여러 tool을 묶어 실행할 수 있다.
 - 거절되면 자동 fallback 없이 즉시 idle 상태로 돌아간다.
 - 세션에는 대화 기록과 tool 사용 기록만 남긴다.
+
+## 모델 및 LoRA per-request 매핑
+
+tool selection은 **LGAI-EXAONE/EXAONE-4.0-32B-AWQ** 단일 vLLM 인스턴스를 통해 이루어진다.
+task 유형에 따라 아래와 같이 LoRA 어댑터를 per-request로 전환한다.
+
+| Task | LoRA 어댑터 | 설명 |
+|---|---|---|
+| `planner` | LoRA 없음 | EXAONE 4.0 네이티브 tool calling (BFCL 65.2) |
+| `draft_civil_response` | `civil-adapter` | 74K 민원 답변 학습, QLoRA on AWQ base |
+| `append_evidence` | `legal-adapter` | 232K 법령/판례 학습, QLoRA on AWQ base |
+| `rag_search`, `api_lookup`, `synthesis` | LoRA 없음 | base model 직접 사용 |
+
+vLLM 서빙 옵션: `--enable-auto-tool-choice --tool-call-parser hermes --enable-lora`
 
 ## Actors
 
@@ -99,17 +113,18 @@
 
 ### STEP 3: Planner Node
 
-**Actor**: LangGraph Agent Runtime + Base Model
+**Actor**: LangGraph Agent Runtime + LLMPlannerAdapter (EXAONE 4.0-32B-AWQ)
 
 **Action**:
 - 현재 요청과 세션 맥락을 함께 읽는다.
-- 이번 요청을 하나의 task loop로 정리한다.
+- `LLMPlannerAdapter`가 EXAONE 4.0의 네이티브 tool calling을 사용해 이번 요청을 하나의 task loop로 정리한다.
+- vLLM OpenAI-compatible endpoint (`--enable-auto-tool-choice --tool-call-parser hermes`) 를 통해 tool 선택 결과를 구조화된 `ToolPlan`으로 변환한다.
 - tool metadata를 읽고 어떤 capability 조합이 필요한지 구조화한다.
 - 예:
-  - 초안 작성
-  - 답변 수정
-  - 근거 보강
-  - 통계 보강
+  - 초안 작성 → `[rag_search, api_lookup, draft_civil_response(civil-adapter)]`
+  - 답변 수정 → `[rag_search, api_lookup, draft_civil_response(civil-adapter)]`
+  - 근거 보강 → `[rag_search, api_lookup, append_evidence(legal-adapter)]`
+  - 통계 보강 → `[api_lookup]`
 
 ### STEP 4: Plan Validation
 
@@ -176,9 +191,10 @@
 ## Routing Policy
 
 - `/help`, `/clear`, `/exit` 같은 shell control만 rule-based로 처리한다.
-- 업무 요청의 tool selection은 planner LLM이 session context, 기존 답변 존재 여부, tool metadata를 읽고 결정한다.
-- 정규식 패턴 매칭은 테스트 fixture나 임시 fallback일 수는 있어도 MVP 정본 orchestration이 아니다.
+- 업무 요청의 tool selection은 `LLMPlannerAdapter`가 EXAONE 4.0-32B-AWQ 네이티브 tool calling을 통해 session context, 기존 답변 존재 여부, tool metadata를 읽고 결정한다.
+- 정규식 패턴 매칭(`RegexPlannerAdapter`)은 CI/테스트 환경(`SKIP_MODEL_LOAD=true`) fallback 전용이며, 운영 정본 orchestration이 아니다.
 - executor는 승인된 plan에 없는 capability를 실행하지 않는다.
+- LoRA 어댑터 전환은 vLLM per-request LoRA를 통해 단일 인스턴스에서 투명하게 처리된다.
 
 ## Test Cases
 

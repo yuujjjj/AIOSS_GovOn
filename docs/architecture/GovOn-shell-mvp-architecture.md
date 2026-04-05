@@ -1,7 +1,7 @@
 # GovOn Shell MVP Architecture
 
 **Status**: Accepted Target  
-**Last Updated**: 2026-04-03  
+**Last Updated**: 2026-04-05  
 **Scope**: First public MVP for `govon`
 
 ---
@@ -246,26 +246,61 @@ The graph is deliberately bounded. Approval, interruption, and controlled execut
 
 ### 5.4 Base Model Runtime
 
+The base model is **LGAI-EXAONE/EXAONE-4.0-32B-AWQ**, served as a single vLLM instance
+(approximately 20GB VRAM on HuggingFace Spaces L4, 24GB).
+
+Serving infrastructure:
+- **Inference**: HuggingFace Spaces L4 GPU ($0.80/h, 24GB VRAM)
+- **Training (LoRA)**: HuggingFace Spaces A10G ($1.50/h)
+- **CLI connection**: `GOVON_RUNTIME_URL=https://<space>.hf.space`
+
+vLLM startup options for EXAONE 4.0 native tool calling:
+
+```bash
+vllm serve LGAI-EXAONE/EXAONE-4.0-32B-AWQ \
+  --enable-auto-tool-choice \
+  --tool-call-parser hermes \
+  --enable-lora \
+  --max-lora-rank 64
+```
+
 The base model is responsible for:
 
-- understanding user intent
-- shaping the structured task plan
+- understanding user intent (tool calling natively, BFCL 65.2)
+- shaping the structured task plan via LLMPlannerAdapter (vLLM OpenAI-compatible API)
 - deciding whether retrieval or external lookup is needed
-- drafting responses when no task-specific adapter is needed
+- drafting responses when no task-specific LoRA adapter is needed
 - revising existing outputs
 
 The base model is not the public product surface. It is an internal reasoning component.
 
+### 5.4.1 Multi-LoRA Architecture
+
+The runtime uses a **single vLLM instance** with per-request LoRA adapter switching:
+
+| Adapter | Capability | Training Data |
+|---|---|---|
+| `civil-adapter` (LoRA #1) | `draft_civil_response` | umyunsang/govon-civil-response-data (74K, QLoRA on AWQ base) |
+| `legal-adapter` (LoRA #2) | `append_evidence` | neuralfoundry-coder/korean-legal-instruction-sample (232K, QLoRA on AWQ base) |
+| _(no LoRA)_ | `rag_search`, `api_lookup`, `synthesis`, `planner` | Base model only |
+
+LoRA adapters are loaded dynamically by vLLM's `--enable-lora` mode. The LLMPlannerAdapter
+passes the appropriate `model` name (e.g., `civil-adapter`) in the OpenAI-compatible
+request when the approved task requires it.
+
 ### 5.5 Civil Response Adapter Manager
 
-The civil-response LoRA adapter is attached only when the user intent reaches an actual drafting step.
+The civil-response LoRA adapter (`civil-adapter`) is attached only when the user intent
+reaches an actual drafting step.
 
 Examples:
 
 - "답변 초안 작성해줘"
 - "이 답변을 더 공손하게 고쳐줘"
 
-The adapter itself is treated as an approval target because the runtime is changing capability mode for the task.
+The adapter itself is treated as an approval target because the runtime is changing
+capability mode for the task. vLLM handles adapter switching transparently within the
+same inference process.
 
 ### 5.6 Tool Registry
 

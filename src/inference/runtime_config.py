@@ -141,19 +141,35 @@ class GenerationDefaults:
 
 @dataclass(frozen=True)
 class ModelConfig:
-    """모델 및 어댑터 설정."""
+    """모델 및 어댑터 설정.
 
-    model_path: str = "umyunsang/GovOn-EXAONE-AWQ-v2"
+    베이스 모델: LGAI-EXAONE/EXAONE-4.0-32B-AWQ (단일 vLLM 인스턴스, ~20GB VRAM)
+    - tool calling 네이티브 지원 (BFCL 65.2)
+    - vLLM 서빙 옵션: --enable-auto-tool-choice --tool-call-parser hermes
+
+    Multi-LoRA 어댑터:
+    - civil-adapter (LoRA #1): draft_civil_response 용도
+      학습 데이터: umyunsang/govon-civil-response-data (74K건), QLoRA on AWQ base
+    - legal-adapter (LoRA #2): append_evidence 용도
+      학습 데이터: neuralfoundry-coder/korean-legal-instruction-sample (232K건), QLoRA on AWQ base
+    - 나머지 capability (rag_search, api_lookup, synthesis 등)는 LoRA 없이 base model 사용
+
+    adapter_paths: vLLM --lora-modules 형식으로 전달할 어댑터 경로 목록.
+      예: ["civil-adapter=/path/to/civil", "legal-adapter=/path/to/legal"]
+    """
+
+    model_path: str = "LGAI-EXAONE/EXAONE-4.0-32B-AWQ"
     trust_remote_code: bool = True
     dtype: str = "half"
     enforce_eager: bool = True
-    # 향후 Multi-LoRA 확장 시 adapter_paths 활용 (R1 이후)
+    # Multi-LoRA: vLLM --lora-modules 형식으로 전달할 어댑터 경로 목록
+    # 예: ["civil-adapter=/path/to/civil", "legal-adapter=/path/to/legal"]
     adapter_paths: List[str] = field(default_factory=list)
 
     @classmethod
     def from_env(cls) -> "ModelConfig":
         return cls(
-            model_path=os.getenv("MODEL_PATH", "umyunsang/GovOn-EXAONE-AWQ-v2"),
+            model_path=os.getenv("MODEL_PATH", "LGAI-EXAONE/EXAONE-4.0-32B-AWQ"),
             trust_remote_code=os.getenv("TRUST_REMOTE_CODE", "true").lower()
             in ("true", "1", "yes"),
             dtype=os.getenv("MODEL_DTYPE", "half"),
