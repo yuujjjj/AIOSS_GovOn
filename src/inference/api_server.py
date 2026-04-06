@@ -1513,6 +1513,20 @@ async def v2_agent_stream(
                             "node": node_name,
                             "status": "completed",
                         }
+                        # synthesis 완료 시 evidence_items와 task_type을 이벤트에 포함.
+                        # 전제: stream_mode="updates"에서 state_delta는 노드의 raw return dict다.
+                        # LangGraph 버전 업그레이드 시 이 구조가 변경될 수 있으므로 주의.
+                        # evidence_items 스키마: EvidenceItem.to_dict() 필드를 따른다.
+                        #   source_type: "rag" | "api" | "llm_generated"
+                        #   title, excerpt, link_or_path, page, score, provider_meta
+                        #   (웹 프론트엔드에서 직접 렌더링 시 XSS 방지를 위해 이스케이프 필요)
+                        if node_name == "synthesis" and isinstance(state_delta, dict):
+                            if state_delta.get("final_text"):
+                                event["final_text"] = state_delta["final_text"]
+                            if state_delta.get("evidence_items"):
+                                event["evidence_items"] = state_delta["evidence_items"]
+                            if state_delta.get("task_type"):
+                                event["task_type"] = state_delta["task_type"]
                         # approval_wait가 interrupt()를 호출하면 stream이 끝나기 전에
                         # 이 이벤트가 마지막으로 전송된다.
                         if node_name == "approval_wait":
@@ -1647,6 +1661,8 @@ async def v2_agent_run(
             "session_id": session_id,
             "graph_run_id": request_id,
             "text": final_state.get("final_text", ""),
+            "evidence_items": final_state.get("evidence_items", []),
+            "task_type": final_state.get("task_type", ""),
         }
     except Exception as exc:
         logger.error(f"[v2/agent/run] 예외 발생: {exc}")
@@ -1716,6 +1732,8 @@ async def v2_agent_approve(
             "session_id": result.get("session_id", ""),
             "graph_run_id": result.get("request_id", ""),
             "text": result.get("final_text", ""),
+            "evidence_items": result.get("evidence_items", []),
+            "task_type": result.get("task_type", ""),
             "tool_results": result.get("tool_results", {}),
             "approval_status": approval_status,
         }

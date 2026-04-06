@@ -381,7 +381,7 @@ async def synthesis_node(state: GovOnGraphState) -> dict:
     Returns
     -------
     dict
-        `final_text`와 `messages`(AIMessage 추가)를 갱신한다.
+        `final_text`, `evidence_items`, `messages`(AIMessage 추가)를 갱신한다.
     """
     _start = time.monotonic()
 
@@ -389,12 +389,16 @@ async def synthesis_node(state: GovOnGraphState) -> dict:
     task_type = state.get("task_type", "")
 
     final_text = _extract_final_text(accumulated, task_type)
+    evidence_items = _collect_evidence_items(accumulated)
 
     _latency_ms = round((time.monotonic() - _start) * 1000, 2)
-    logger.info(f"[synthesis] final_text_len={len(final_text)} latency_ms={_latency_ms}")
+    logger.info(
+        f"[synthesis] final_text_len={len(final_text)} evidence_items={len(evidence_items)} latency_ms={_latency_ms}"
+    )
 
     return {
         "final_text": final_text,
+        "evidence_items": evidence_items,
         "messages": [AIMessage(content=final_text)],
         "node_latencies": {"synthesis": _latency_ms},
     }
@@ -495,11 +499,71 @@ async def persist_node(
     return {"node_latencies": {"persist": _latency_ms}}
 
 
+def _safe_score(item: dict) -> float:
+    """evidence item의 score를 안전하게 float으로 변환한다.
+
+    외부 API 결과의 score가 문자열이거나 None일 수 있으므로
+    변환 실패 시 0.0을 반환한다.
+    """
+    try:
+        return float(item.get("score", 0.0))
+    except (ValueError, TypeError):
+        return 0.0
+
+
+# accumulated 컨텍스트 탐색 시 스킵할 메타 키 목록 (모듈 레벨 상수)
+_CONTEXT_META_KEYS: frozenset[str] = frozenset(
+    {
+        "session_context",
+        "query",
+        "query_variants",
+        "previous_user_query",
+        "previous_assistant_response",
+        "recent_tool_summary",
+    }
+)
+
+
+def _collect_evidence_items(accumulated: Dict[str, Any]) -> list[dict]:
+    """accumulated 컨텍스트에서 모든 EvidenceItem dict를 수집한다.
+
+    각 tool 결과의 evidence.items 필드를 탐색하여 하나의 리스트로 합산한다.
+    최대 10개까지 반환하며, score 내림차순으로 정렬한다.
+
+    Parameters
+    ----------
+    accumulated : Dict[str, Any]
+        tool 결과가 누적된 컨텍스트 dict.
+
+    Returns
+    -------
+    list[dict]
+        EvidenceItem.to_dict() 형태의 dict 리스트.
+    """
+    items: list[dict] = []
+    for key, payload in accumulated.items():
+        if key in _CONTEXT_META_KEYS:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        ev = payload.get("evidence")
+        if isinstance(ev, dict) and ev.get("items"):
+            for item in ev["items"]:
+                if isinstance(item, dict):
+                    items.append(item)
+    # score 내림차순, 최대 10개 — 외부 값이므로 _safe_score로 방어적 변환
+    items.sort(key=_safe_score, reverse=True)
+    return items[:10]
+
+
 def _extract_final_text(accumulated: Dict[str, Any], task_type: str) -> str:
     """tool 결과를 종합하여 최종 텍스트를 생성한다.
 
     기존 AgentLoop._extract_final_text()를 계승하되,
     task_type을 기반으로 분기한다.
+
+    append_evidence 타입일 때는 기존 답변(previous_assistant_response)을
+    evidence 섹션 앞에 prepend하여 답변을 보강한다.
 
     Parameters
     ----------
@@ -513,6 +577,17 @@ def _extract_final_text(accumulated: Dict[str, Any], task_type: str) -> str:
     str
         최종 응답 텍스트.
     """
+    # append_evidence: 기존 답변 위에 근거 섹션을 추가한다
+    if task_type == "append_evidence":
+        previous_draft = str(accumulated.get("previous_assistant_response", "")).strip()
+        evidence_section = _build_evidence_section(accumulated)
+        if previous_draft and evidence_section:
+            return f"{previous_draft}\n\n{evidence_section}"
+        if evidence_section:
+            return evidence_section
+        if previous_draft:
+            return previous_draft
+
     # 1. append_evidence 또는 draft_civil_response의 직접 텍스트가 있으면 사용
     for key in ("append_evidence", "draft_civil_response"):
         payload = accumulated.get(key, {})
@@ -571,3 +646,50 @@ def _extract_final_text(accumulated: Dict[str, Any], task_type: str) -> str:
             parts.append(api_data["context_text"])
 
     return "\n\n".join(parts) if parts else "요청을 처리할 수 없습니다."
+
+
+def _build_evidence_section(accumulated: Dict[str, Any]) -> str:
+    """accumulated에서 근거 섹션 텍스트를 구성한다.
+
+    append_evidence capability의 직접 텍스트가 있으면 우선 사용하고,
+    없으면 evidence items에서 구조화된 텍스트를 생성한다.
+
+    계약(contract):
+      - 이 함수는 **근거 섹션만** 반환한다. 기존 답변(previous_draft)은 포함하지 않는다.
+      - 호출자(_extract_final_text)가 previous_draft와 병합하여 반환한다.
+      - AppendEvidenceCapability.execute()의 text 필드도 근거 섹션만 담아야 한다.
+        (기존 답변을 포함한 완전 응답을 text에 넣으면 _extract_final_text에서 중복된다.)
+
+    Parameters
+    ----------
+    accumulated : Dict[str, Any]
+        tool 결과가 누적된 컨텍스트 dict.
+
+    Returns
+    -------
+    str
+        근거 섹션 텍스트. 근거가 없으면 빈 문자열.
+    """
+    # append_evidence capability의 직접 생성 텍스트 우선 사용
+    # 이 텍스트는 근거 섹션만 담아야 한다 (기존 답변 포함 금지).
+    ae_payload = accumulated.get("append_evidence", {})
+    if isinstance(ae_payload, dict) and ae_payload.get("text"):
+        return str(ae_payload["text"])
+
+    # evidence items에서 구조화 텍스트 생성
+    items = _collect_evidence_items(accumulated)
+    if not items:
+        return ""
+
+    lines = ["[참조 근거]"]
+    for item in items[:5]:
+        source_type = item.get("source_type", "")
+        title = item.get("title", "")
+        excerpt = item.get("excerpt", "")[:120]
+        label = "[로컬]" if source_type == "rag" else "[외부]" if source_type == "api" else "[생성]"
+        if title:
+            lines.append(f"- {label} {title}: {excerpt}")
+        elif excerpt:
+            lines.append(f"- {label} {excerpt}")
+
+    return "\n".join(lines) if len(lines) > 1 else ""
