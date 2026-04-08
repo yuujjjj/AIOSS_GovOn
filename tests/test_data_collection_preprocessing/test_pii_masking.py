@@ -3,11 +3,12 @@ Tests for PII Masking Module
 """
 
 import pytest
+
 from src.data_collection_preprocessing.pii_masking import (
     PIIMasker,
     PIIType,
     mask_pii,
-    validate_no_pii
+    validate_no_pii,
 )
 
 

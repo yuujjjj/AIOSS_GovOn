@@ -2,18 +2,19 @@
 Tests for Calibration Dataset Generator Module
 """
 
-import pytest
 import json
-from pathlib import Path
 import tempfile
+from pathlib import Path
+
+import pytest
 
 from src.data_collection_preprocessing.calibration_dataset import (
     CalibrationDatasetGenerator,
     CalibrationSample,
     CalibrationStats,
 )
-from src.data_collection_preprocessing.data_preprocessor import ProcessedRecord
 from src.data_collection_preprocessing.config import CalibrationConfig
+from src.data_collection_preprocessing.data_preprocessor import ProcessedRecord
 
 
 class TestCalibrationDatasetGenerator:
@@ -42,7 +43,7 @@ class TestCalibrationDatasetGenerator:
                 category=categories[i % len(categories)],
                 original_question_length=50 + i % 50,
                 original_answer_length=80 + i % 30,
-                source="test"
+                source="test",
             )
             records.append(record)
 
@@ -50,20 +51,14 @@ class TestCalibrationDatasetGenerator:
 
     def test_generate_calibration_dataset(self, generator, sample_records):
         """Test generating calibration dataset"""
-        samples = generator.generate_calibration_dataset(
-            sample_records,
-            num_samples=50
-        )
+        samples = generator.generate_calibration_dataset(sample_records, num_samples=50)
 
         assert len(samples) == 50
         assert all(isinstance(s, CalibrationSample) for s in samples)
 
     def test_sample_diversity(self, generator, sample_records):
         """Test that samples are diverse across categories"""
-        samples = generator.generate_calibration_dataset(
-            sample_records,
-            num_samples=30
-        )
+        samples = generator.generate_calibration_dataset(sample_records, num_samples=30)
 
         categories = set(s.category for s in samples)
         # Should have representation from multiple categories
@@ -93,10 +88,7 @@ class TestCalibrationDatasetGenerator:
         # Add duplicate records
         duplicated = sample_records + sample_records[:10]
 
-        samples = generator.generate_calibration_dataset(
-            duplicated,
-            num_samples=50
-        )
+        samples = generator.generate_calibration_dataset(duplicated, num_samples=50)
 
         # Should not have more unique samples than original
         assert len(samples) <= 50
@@ -147,7 +139,7 @@ class TestCalibrationDatasetSaving:
                     category="test",
                     original_question_length=50,
                     original_answer_length=50,
-                    source="test"
+                    source="test",
                 )
                 records.append(record)
 

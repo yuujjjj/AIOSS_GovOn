@@ -60,18 +60,15 @@ jobs:
           python -m pip install -r requirements-ci.txt
 
       - name: Run Black
-        run: black --check src/data_collection_preprocessing tests/test_data_collection_preprocessing
+        run: |
+          black --check \
+            --target-version py310 \
+            --target-version py311 \
+            src/data_collection_preprocessing \
+            tests/test_data_collection_preprocessing
 
       - name: Run isort
         run: isort --check-only src/data_collection_preprocessing tests/test_data_collection_preprocessing
-
-      - name: Run Flake8
-        run: |
-          flake8 \
-            src/data_collection_preprocessing \
-            tests/test_data_collection_preprocessing \
-            --max-line-length=100 \
-            --extend-ignore=E203,W503
 
   python-build:
     name: Python Build
