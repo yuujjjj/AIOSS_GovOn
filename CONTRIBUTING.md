@@ -19,12 +19,13 @@ GovOn 프로젝트에 관심을 가져주셔서 감사합니다!
 
 이 프로젝트는 [행동 강령](CODE_OF_CONDUCT.md)을 따릅니다.
 프로젝트에 참여함으로써 이 강령을 준수하는 것에 동의하게 됩니다.
+운영 원칙은 [GOVERNANCE.md](GOVERNANCE.md), 내부 협업 계획은 [docs/innersource-plan.md](docs/innersource-plan.md) 를 참고합니다.
 
 ## 기여 방법
 
 ### 1. 이슈 확인 또는 생성
 
-- 기존 [이슈 목록](https://github.com/GovOn-Org/GovOn/issues)에서 작업할 이슈를 확인합니다.
+- 기존 [이슈 목록](https://github.com/yuujjjj/AIOSS_GovOn/issues)에서 작업할 이슈를 확인합니다.
 - 새로운 버그나 기능 제안이 있다면 이슈를 먼저 생성합니다.
 - 이슈 템플릿을 활용하여 작성해 주세요:
   - **기능 요청**: 새로운 기능 제안
@@ -36,11 +37,11 @@ GovOn 프로젝트에 관심을 가져주셔서 감사합니다!
 
 ```bash
 # 레포지토리 Fork 후 클론
-git clone https://github.com/<your-username>/GovOn.git
-cd GovOn
+git clone https://github.com/<your-username>/AIOSS_GovOn.git
+cd AIOSS_GovOn
 
 # upstream 설정
-git remote add upstream https://github.com/GovOn-Org/GovOn.git
+git remote add upstream https://github.com/yuujjjj/AIOSS_GovOn.git
 ```
 
 > **팀 내부 기여자**는 Fork 없이 직접 브랜치를 생성하여 작업할 수 있습니다.
@@ -48,8 +49,8 @@ git remote add upstream https://github.com/GovOn-Org/GovOn.git
 ### 3. 브랜치 생성 및 작업
 
 ```bash
-git checkout develop
-git pull upstream develop
+git checkout main
+git pull upstream main
 git checkout -b feat/이슈번호-작업설명
 ```
 
@@ -63,7 +64,7 @@ git push origin feat/이슈번호-작업설명
 
 ### 5. Pull Request 생성
 
-- `develop` 브랜치를 대상으로 PR을 생성합니다.
+- `main` 브랜치를 대상으로 PR을 생성합니다.
 - PR 템플릿에 따라 내용을 작성합니다.
 - 관련 이슈를 연결합니다 (`Closes #이슈번호`).
 
@@ -79,8 +80,8 @@ git push origin feat/이슈번호-작업설명
 
 ```bash
 # 저장소 클론
-git clone https://github.com/GovOn-Org/GovOn.git
-cd GovOn
+git clone https://github.com/yuujjjj/AIOSS_GovOn.git
+cd AIOSS_GovOn
 
 # 가상환경 생성 및 활성화
 python -m venv venv
@@ -96,8 +97,7 @@ GitHub Flow 기반의 브랜치 전략을 사용합니다.
 
 | 브랜치 | 용도 | 규칙 |
 |--------|------|------|
-| `main` | 프로덕션 (안정 버전) | 직접 push 금지, PR 머지만 허용 |
-| `develop` | 개발 통합 브랜치 | 기능 브랜치의 머지 대상 |
+| `main` | 기본 브랜치 (안정 버전) | 직접 push 금지, PR 머지만 허용 |
 | `feat/*` | 새 기능 개발 | `feat/이슈번호-설명` 형식 |
 | `fix/*` | 버그 수정 | `fix/이슈번호-설명` 형식 |
 | `docs/*` | 문서 작업 | `docs/이슈번호-설명` 형식 |
@@ -142,6 +142,7 @@ GitHub Flow 기반의 브랜치 전략을 사용합니다.
    - 테스트 결과 기록
 3. **연결**: 관련 이슈를 `Closes #이슈번호`로 연결
 4. **리뷰어**: 최소 1명의 리뷰어를 지정
+5. **소유자 검토**: 핵심 경로 변경 시 `CODEOWNERS` 기준 리뷰를 요청
 
 ### PR 체크리스트
 
@@ -210,7 +211,7 @@ def classify_complaint(text: str, model_name: str = "exaone") -> dict:
 
 ## 질문이 있다면
 
-- [GitHub Issues](https://github.com/GovOn-Org/GovOn/issues)에서 `question` 라벨로 이슈를 생성해 주세요.
-- [GitHub Discussions](https://github.com/GovOn-Org/GovOn/discussions) (활성화 시)에서 자유롭게 질문할 수 있습니다.
+- [GitHub Issues](https://github.com/yuujjjj/AIOSS_GovOn/issues)에서 `question` 라벨로 이슈를 생성해 주세요.
+- [GitHub Discussions](https://github.com/yuujjjj/AIOSS_GovOn/discussions) (활성화 시)에서 자유롭게 질문할 수 있습니다.
 
 감사합니다!

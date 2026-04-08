@@ -49,8 +49,8 @@
 모욕적이거나 괴롭히거나 기타 용납할 수 없는 행동이 발생하면
 프로젝트 관리자에게 신고할 수 있습니다:
 
-- **GitHub Issues**: [이슈 생성](https://github.com/GovOn-Org/GovOn/issues)
-- **이메일**: 프로젝트 관리자에게 직접 연락
+- **GitHub Issues**: [이슈 생성](https://github.com/yuujjjj/AIOSS_GovOn/issues)
+- **관리자 연락**: 저장소 관리자 [@yuujjjj](https://github.com/yuujjjj), [@umyunsang](https://github.com/umyunsang) 에게 GitHub 프로필을 통해 연락
 
 모든 불만 사항은 검토 및 조사되며, 상황에 적절하고 필요하다고
 판단되는 방식으로 대응할 것입니다. 프로젝트 팀은 사건 신고자의
