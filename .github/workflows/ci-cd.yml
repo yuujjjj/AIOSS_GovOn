@@ -4,160 +4,229 @@ on:
   pull_request:
     branches:
       - main
+      - "release/**"
+    paths:
+      - ".github/workflows/**"
+      - ".github/actions/**"
+      - "src/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - "requirements*.txt"
+      - "GovOn/frontend/**"
   push:
     branches:
       - main
+      - "release/**"
+    paths:
+      - ".github/workflows/**"
+      - ".github/actions/**"
+      - "src/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - "requirements*.txt"
+      - "GovOn/frontend/**"
   workflow_dispatch:
+    inputs:
+      force_python:
+        description: Force the Python pipeline to run.
+        type: boolean
+        default: true
+      force_frontend:
+        description: Force the frontend pipeline to run when the project exists.
+        type: boolean
+        default: false
+      force_benchmark:
+        description: Force the cache benchmark jobs to run.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-cd-${{ github.ref }}
+  group: ci-cd-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  PYTHON_BUILD_VERSION: "3.11"
   NODE_BUILD_VERSION: "20"
+  PYTHON_BUILD_VERSION: "3.12"
+  PYTHON_MATRIX_OS: '["ubuntu-latest","macos-latest","windows-latest"]'
+  PYTHON_MATRIX_VERSIONS: '["3.10","3.11","3.12"]'
 
 jobs:
-  detect-projects:
-    name: Detect Projects
+  plan-pipeline:
+    name: Plan Pipeline
     runs-on: ubuntu-latest
     outputs:
-      has_frontend: ${{ steps.detect.outputs.has_frontend }}
+      has_frontend: ${{ steps.plan.outputs.has_frontend }}
+      run_python: ${{ steps.plan.outputs.run_python }}
+      run_frontend: ${{ steps.plan.outputs.run_frontend }}
+      run_deploy: ${{ steps.plan.outputs.run_deploy }}
+      run_benchmark: ${{ steps.plan.outputs.run_benchmark }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
-      - name: Detect optional frontend project
-        id: detect
+      - name: Detect changed files and pipeline scopes
+        id: plan
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          FORCE_PYTHON: ${{ github.event.inputs.force_python || 'false' }}
+          FORCE_FRONTEND: ${{ github.event.inputs.force_frontend || 'false' }}
+          FORCE_BENCHMARK: ${{ github.event.inputs.force_benchmark || 'false' }}
         run: |
+          set -euo pipefail
+
+          changed_file_list="changed-files.txt"
+          : > "${changed_file_list}"
+
+          has_frontend=false
           if [ -f "GovOn/frontend/package-lock.json" ]; then
-            echo "has_frontend=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_frontend=false" >> "$GITHUB_OUTPUT"
+            has_frontend=true
           fi
 
-  python-lint:
-    name: Python Lint
-    runs-on: ubuntu-latest
-    needs: detect-projects
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            git ls-files > "${changed_file_list}"
+          else
+            base_sha=""
+            head_sha="${GITHUB_SHA}"
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_BUILD_VERSION }}
-          cache: pip
-          cache-dependency-path: requirements-ci.txt
+            if [ "${EVENT_NAME}" = "pull_request" ] && [ -n "${PR_BASE_SHA}" ] && [ -n "${PR_HEAD_SHA}" ]; then
+              base_sha="${PR_BASE_SHA}"
+              head_sha="${PR_HEAD_SHA}"
+            elif [ -n "${BEFORE_SHA}" ] && [ "${BEFORE_SHA}" != "0000000000000000000000000000000000000000" ]; then
+              base_sha="${BEFORE_SHA}"
+            else
+              base_sha="$(git rev-list --max-count=1 HEAD^ || true)"
+            fi
 
-      - name: Install CI dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements-ci.txt
+            if [ -n "${base_sha}" ]; then
+              git diff --name-only "${base_sha}" "${head_sha}" > "${changed_file_list}"
+            else
+              git ls-files > "${changed_file_list}"
+            fi
+          fi
 
-      - name: Run Black
-        run: |
-          black --check \
-            --target-version py310 \
-            --target-version py311 \
-            src/data_collection_preprocessing \
-            tests/test_data_collection_preprocessing
+          python_changed=false
+          frontend_changed=false
+          ci_changed=false
+          deploy_changed=false
 
-      - name: Run isort
-        run: isort --check-only src/data_collection_preprocessing tests/test_data_collection_preprocessing
+          while IFS= read -r file; do
+            [ -z "${file}" ] && continue
+            case "${file}" in
+              src/*|tests/*|pyproject.toml|requirements.txt|requirements-ci.txt|requirements-dev.txt)
+                python_changed=true
+                ;;
+              GovOn/frontend/*)
+                frontend_changed=true
+                deploy_changed=true
+                ;;
+              .github/workflows/*|.github/actions/*)
+                ci_changed=true
+                ;;
+            esac
+          done < "${changed_file_list}"
 
-  python-build:
-    name: Python Build
-    runs-on: ubuntu-latest
-    needs: python-lint
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+          if [ "${ci_changed}" = true ]; then
+            python_changed=true
+            if [ "${has_frontend}" = true ]; then
+              frontend_changed=true
+              deploy_changed=true
+            fi
+          fi
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_BUILD_VERSION }}
+          if [ "${FORCE_PYTHON}" = "true" ]; then
+            python_changed=true
+          fi
 
-      - name: Build package artifacts
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install build
-          python -m build
+          if [ "${FORCE_FRONTEND}" = "true" ] && [ "${has_frontend}" = true ]; then
+            frontend_changed=true
+            deploy_changed=true
+          fi
 
-      - name: Upload Python dist artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: python-dist
-          path: dist/*
-          if-no-files-found: error
+          run_python="${python_changed}"
+          run_frontend=false
+          if [ "${has_frontend}" = true ] && [ "${frontend_changed}" = true ]; then
+            run_frontend=true
+          fi
 
-  python-test:
-    name: Python Test (${{ matrix.os }}, py${{ matrix.python-version }})
-    runs-on: ${{ matrix.os }}
-    needs: python-build
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - ubuntu-latest
-          - macos-latest
-        python-version:
-          - "3.10"
-          - "3.11"
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+          run_deploy=false
+          if [ "${run_frontend}" = true ] && [ "${EVENT_NAME}" = "push" ]; then
+            case "${REF_NAME}" in
+              main|release/*)
+                run_deploy=true
+                ;;
+            esac
+          fi
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-          cache: pip
-          cache-dependency-path: requirements-ci.txt
+          run_benchmark=false
+          if [ "${FORCE_BENCHMARK}" = "true" ]; then
+            run_benchmark=true
+          elif [ "${EVENT_NAME}" = "push" ] && [ "${REF_NAME}" = "main" ] && [ "${ci_changed}" = true ]; then
+            run_benchmark=true
+          fi
 
-      - name: Download Python dist artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: python-dist
-          path: dist
+          {
+            echo "has_frontend=${has_frontend}"
+            echo "run_python=${run_python}"
+            echo "run_frontend=${run_frontend}"
+            echo "run_deploy=${run_deploy}"
+            echo "run_benchmark=${run_benchmark}"
+          } >> "${GITHUB_OUTPUT}"
 
-      - name: Install test dependencies and built wheel
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install pytest pytest-cov python-dotenv
-          python -m pip install --no-deps dist/*.whl
+          {
+            echo "### Pipeline plan"
+            echo ""
+            echo "- has_frontend: ${has_frontend}"
+            echo "- run_python: ${run_python}"
+            echo "- run_frontend: ${run_frontend}"
+            echo "- run_deploy: ${run_deploy}"
+            echo "- run_benchmark: ${run_benchmark}"
+            echo ""
+            echo "### Changed files"
+            if [ -s "${changed_file_list}" ]; then
+              sed 's/^/- /' "${changed_file_list}"
+            else
+              echo "- (none)"
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
 
-      - name: Run pytest
-        env:
-          AIHUB_API_KEY: ${{ secrets.AIHUB_API_KEY }}
-          API_KEY: ${{ secrets.GOVON_API_KEY }}
-          BM25_INDEX_HMAC_KEY: ${{ secrets.BM25_INDEX_HMAC_KEY }}
-        run: pytest tests/test_data_collection_preprocessing -q
+  python-ci:
+    name: Python CI
+    needs: plan-pipeline
+    if: ${{ needs.plan-pipeline.outputs.run_python == 'true' }}
+    uses: ./.github/workflows/reusable-python-ci.yml
+    with:
+      build-python-version: ${{ env.PYTHON_BUILD_VERSION }}
+      dependency-file: requirements-ci.txt
+      matrix-os: ${{ env.PYTHON_MATRIX_OS }}
+      matrix-python-versions: ${{ env.PYTHON_MATRIX_VERSIONS }}
+      pytest-command: pytest tests/test_data_collection_preprocessing -q
+    secrets: inherit
 
   frontend-lint:
     name: Frontend Lint
     runs-on: ubuntu-latest
-    needs: detect-projects
-    if: ${{ needs.detect-projects.outputs.has_frontend == 'true' }}
+    needs: plan-pipeline
+    if: ${{ needs.plan-pipeline.outputs.run_frontend == 'true' }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: Set up frontend dependencies
+        uses: ./.github/actions/setup-node-frontend
         with:
           node-version: ${{ env.NODE_BUILD_VERSION }}
-          cache: npm
+          working-directory: GovOn/frontend
           cache-dependency-path: GovOn/frontend/package-lock.json
-
-      - name: Install frontend dependencies
-        working-directory: GovOn/frontend
-        run: npm ci
 
       - name: Run frontend lint
         working-directory: GovOn/frontend
@@ -167,36 +236,32 @@ jobs:
     name: Frontend Build
     runs-on: ubuntu-latest
     needs:
-      - detect-projects
+      - plan-pipeline
       - frontend-lint
-    if: ${{ needs.detect-projects.outputs.has_frontend == 'true' }}
+    if: ${{ needs.plan-pipeline.outputs.run_frontend == 'true' }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: Set up frontend dependencies
+        uses: ./.github/actions/setup-node-frontend
         with:
           node-version: ${{ env.NODE_BUILD_VERSION }}
-          cache: npm
+          working-directory: GovOn/frontend
           cache-dependency-path: GovOn/frontend/package-lock.json
 
-      - name: Install frontend dependencies
-        working-directory: GovOn/frontend
-        run: npm ci
-
       - name: Configure GitHub Pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
 
       - name: Build static export
         working-directory: GovOn/frontend
         env:
-          NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
           NEXT_PUBLIC_API_BASE_URL: ${{ secrets.NEXT_PUBLIC_API_BASE_URL }}
+          NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
         run: npm run build
 
       - name: Upload frontend static artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: frontend-static-export
           path: GovOn/frontend/out
@@ -211,51 +276,151 @@ jobs:
     name: Frontend Smoke Test
     runs-on: ubuntu-latest
     needs:
-      - detect-projects
+      - plan-pipeline
       - frontend-build
-    if: ${{ needs.detect-projects.outputs.has_frontend == 'true' }}
+    if: ${{ needs.plan-pipeline.outputs.run_frontend == 'true' }}
     steps:
       - name: Download frontend artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: frontend-static-export
           path: frontend-static
 
       - name: Verify exported site
+        shell: bash
         run: |
           test -f frontend-static/index.html
           test -f frontend-static/main/index.html
           grep -q "GovOn" frontend-static/index.html
 
+  cache-benchmark-no-cache:
+    name: Cache Benchmark (No Cache)
+    runs-on: ubuntu-latest
+    needs:
+      - plan-pipeline
+      - python-ci
+    if: ${{ needs.plan-pipeline.outputs.run_benchmark == 'true' }}
+    outputs:
+      duration_seconds: ${{ steps.measure.outputs.duration_seconds }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Purge pip cache
+        shell: bash
+        run: |
+          python -m pip cache purge || true
+          rm -rf "${HOME}/.cache/pip"
+
+      - name: Measure dependency install without cache
+        id: measure
+        shell: bash
+        run: |
+          set -euo pipefail
+          start=$(date +%s)
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-ci.txt
+          end=$(date +%s)
+          echo "duration_seconds=$((end-start))" >> "${GITHUB_OUTPUT}"
+
+  cache-benchmark-cache-hit:
+    name: Cache Benchmark (Cache Hit)
+    runs-on: ubuntu-latest
+    needs:
+      - plan-pipeline
+      - python-ci
+      - cache-benchmark-no-cache
+    if: ${{ needs.plan-pipeline.outputs.run_benchmark == 'true' }}
+    outputs:
+      cache_hit: ${{ steps.setup.outputs.cache-hit }}
+      duration_seconds: ${{ steps.measure.outputs.duration_seconds }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Restore cached Python dependencies
+        id: setup
+        uses: ./.github/actions/setup-python-ci
+        with:
+          dependency-file: requirements-ci.txt
+          install-dependencies: "false"
+          python-version: "3.11"
+
+      - name: Measure dependency install with cache
+        id: measure
+        shell: bash
+        run: |
+          set -euo pipefail
+          start=$(date +%s)
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-ci.txt
+          end=$(date +%s)
+          echo "duration_seconds=$((end-start))" >> "${GITHUB_OUTPUT}"
+
+  cache-benchmark-report:
+    name: Cache Benchmark Report
+    runs-on: ubuntu-latest
+    needs:
+      - plan-pipeline
+      - cache-benchmark-no-cache
+      - cache-benchmark-cache-hit
+    if: ${{ needs.plan-pipeline.outputs.run_benchmark == 'true' }}
+    steps:
+      - name: Create benchmark report
+        shell: bash
+        env:
+          CACHE_HIT: ${{ needs.cache-benchmark-cache-hit.outputs.cache_hit }}
+          CACHED_SECONDS: ${{ needs.cache-benchmark-cache-hit.outputs.duration_seconds }}
+          NO_CACHE_SECONDS: ${{ needs.cache-benchmark-no-cache.outputs.duration_seconds }}
+        run: |
+          set -euo pipefail
+
+          improvement=$(python - <<'PY'
+          import os
+          before = float(os.environ["NO_CACHE_SECONDS"])
+          after = float(os.environ["CACHED_SECONDS"])
+          print(f"{((before - after) / before) * 100:.2f}")
+          PY
+          )
+
+          cat <<EOF > cache-benchmark-summary.md
+          # Cache Benchmark Summary
+
+          - Cache hit restored: ${CACHE_HIT}
+          - No-cache install time: ${NO_CACHE_SECONDS}s
+          - Cached install time: ${CACHED_SECONDS}s
+          - Improvement: ${improvement}%
+          EOF
+
+          cat cache-benchmark-summary.md >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload benchmark summary
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-cache-benchmark-summary
+          path: cache-benchmark-summary.md
+
   deploy-pages:
     name: Deploy
     runs-on: ubuntu-latest
     needs:
-      - detect-projects
-      - python-test
+      - plan-pipeline
       - frontend-build
       - frontend-smoke
-    if: >-
-      github.event_name == 'push' &&
-      github.ref == 'refs/heads/main' &&
-      needs.detect-projects.outputs.has_frontend == 'true'
+    if: ${{ needs.plan-pipeline.outputs.run_deploy == 'true' }}
     permissions:
       contents: read
-      pages: write
       id-token: write
+      pages: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Download Python dist artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: python-dist
-          path: dist
-
-      - name: Confirm deployment payload
-        run: ls -la dist
-
       - name: Deploy GitHub Pages artifact
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

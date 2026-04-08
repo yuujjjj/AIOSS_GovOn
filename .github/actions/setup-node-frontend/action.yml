@@ -1,0 +1,28 @@
+name: Setup Node Frontend
+description: Set up Node.js and install frontend dependencies with npm caching.
+
+inputs:
+  node-version:
+    description: Node.js version to install.
+    required: true
+  working-directory:
+    description: Frontend working directory.
+    required: true
+  cache-dependency-path:
+    description: package-lock path used for npm cache invalidation.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Node.js
+      uses: actions/setup-node@v6
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: npm
+        cache-dependency-path: ${{ inputs.cache-dependency-path }}
+
+    - name: Install frontend dependencies
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: npm ci
