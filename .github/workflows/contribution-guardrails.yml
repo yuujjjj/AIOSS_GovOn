@@ -1,0 +1,55 @@
+name: Contribution Guardrails
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  validate-branch-and-title:
+    name: Validate Branch And PR Title
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate head branch name
+        run: |
+          bash scripts/check_contribution_rules.sh branch "${{ github.head_ref }}"
+
+      - name: Validate PR title
+        run: |
+          bash scripts/check_contribution_rules.sh conventional "PR title" "${{ github.event.pull_request.title }}"
+
+  validate-commit-subjects:
+    name: Validate Commit Subjects
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout head branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Fetch base branch
+        run: git fetch origin "${{ github.event.pull_request.base.ref }}" --depth=1
+
+      - name: Validate commit subjects
+        run: |
+          BASE_REF="origin/${{ github.event.pull_request.base.ref }}"
+          RANGE="${BASE_REF}..HEAD"
+          COMMITS=$(git log --format='%H%x09%s' "$RANGE")
+
+          if [ -z "$COMMITS" ]; then
+            echo "No commits to validate."
+            exit 0
+          fi
+
+          while IFS=$'\t' read -r sha subject; do
+            [ -n "$sha" ] || continue
+            bash scripts/check_contribution_rules.sh conventional "commit ${sha}" "${subject}"
+          done <<< "$COMMITS"

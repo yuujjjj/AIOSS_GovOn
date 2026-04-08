@@ -36,11 +36,11 @@ GovOn 프로젝트에 관심을 가져주셔서 감사합니다!
 
 ```bash
 # 레포지토리 Fork 후 클론
-git clone https://github.com/<your-username>/GovOn.git
-cd GovOn
+git clone https://github.com/<your-username>/AIOSS_GovOn.git
+cd AIOSS_GovOn
 
 # upstream 설정
-git remote add upstream https://github.com/GovOn-Org/GovOn.git
+git remote add upstream https://github.com/yuujjjj/AIOSS_GovOn.git
 ```
 
 > **팀 내부 기여자**는 Fork 없이 직접 브랜치를 생성하여 작업할 수 있습니다.
@@ -48,9 +48,9 @@ git remote add upstream https://github.com/GovOn-Org/GovOn.git
 ### 3. 브랜치 생성 및 작업
 
 ```bash
-git checkout develop
-git pull upstream develop
-git checkout -b feat/이슈번호-작업설명
+git checkout main
+git pull upstream main
+git checkout -b feature/이슈번호-작업설명
 ```
 
 ### 4. 커밋 및 Push
@@ -58,12 +58,12 @@ git checkout -b feat/이슈번호-작업설명
 ```bash
 git add <변경된 파일>
 git commit -m "feat: 작업 내용 설명"
-git push origin feat/이슈번호-작업설명
+git push origin feature/이슈번호-작업설명
 ```
 
 ### 5. Pull Request 생성
 
-- `develop` 브랜치를 대상으로 PR을 생성합니다.
+- `main` 브랜치를 대상으로 PR을 생성합니다.
 - PR 템플릿에 따라 내용을 작성합니다.
 - 관련 이슈를 연결합니다 (`Closes #이슈번호`).
 
@@ -92,21 +92,27 @@ pip install -r requirements.txt
 
 ## 브랜치 전략
 
-GitHub Flow 기반의 브랜치 전략을 사용합니다.
+이 저장소는 `main` 기준의 feature 브랜치 전략을 사용합니다.
 
 | 브랜치 | 용도 | 규칙 |
 |--------|------|------|
 | `main` | 프로덕션 (안정 버전) | 직접 push 금지, PR 머지만 허용 |
-| `develop` | 개발 통합 브랜치 | 기능 브랜치의 머지 대상 |
-| `feat/*` | 새 기능 개발 | `feat/이슈번호-설명` 형식 |
-| `fix/*` | 버그 수정 | `fix/이슈번호-설명` 형식 |
-| `docs/*` | 문서 작업 | `docs/이슈번호-설명` 형식 |
-| `chore/*` | 설정/인프라 작업 | `chore/이슈번호-설명` 형식 |
+| `feature/*` | 기능 및 문서 작업 | `feature/<작업설명>` 형식 |
+| `fix/*` | 버그 수정 | `fix/<작업설명>` 형식 |
+
+### 브랜치 이름 규칙
+
+- 모든 PR 브랜치는 `feature/*` 또는 `fix/*` 패턴을 따라야 합니다.
+- 예시:
+  - `feature/dora-dashboard-docs`
+  - `feature/branch-commit-guardrails`
+  - `fix/workflow-grafana-auth`
+- 이 규칙은 GitHub Actions `Contribution Guardrails` 워크플로우에서 자동 검사합니다.
 
 ## 커밋 컨벤션
 
 [Conventional Commits](https://www.conventionalcommits.org/) 형식을 따릅니다.
-커밋 메시지는 **한글**로 작성합니다.
+커밋 제목(subject)은 아래 형식으로 작성합니다.
 
 ### 형식
 
@@ -131,6 +137,15 @@ GitHub Flow 기반의 브랜치 전략을 사용합니다.
 | `chore` | 빌드/설정 변경 | `chore: GitHub Actions 워크플로우 추가` |
 | `perf` | 성능 개선 | `perf: vLLM 배치 추론 속도 최적화` |
 
+### 자동 검사 대상
+
+- PR 제목도 동일한 Conventional Commits 형식을 사용합니다.
+- PR에 포함된 모든 커밋 subject도 동일한 형식을 사용합니다.
+- 허용 타입: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `perf`
+- 예시:
+  - `docs: add branch strategy guardrails`
+  - `chore: enforce branch strategy and conventional commits`
+
 ## Pull Request 가이드
 
 ### PR 작성 규칙
@@ -142,10 +157,13 @@ GitHub Flow 기반의 브랜치 전략을 사용합니다.
    - 테스트 결과 기록
 3. **연결**: 관련 이슈를 `Closes #이슈번호`로 연결
 4. **리뷰어**: 최소 1명의 리뷰어를 지정
+5. **브랜치명**: `feature/*` 또는 `fix/*` 패턴 사용
 
 ### PR 체크리스트
 
 - [ ] 커밋 메시지가 컨벤션을 따르는가?
+- [ ] PR 제목이 Conventional Commits 형식을 따르는가?
+- [ ] 브랜치 이름이 `feature/*` 또는 `fix/*` 패턴을 따르는가?
 - [ ] 관련 이슈가 연결되어 있는가?
 - [ ] 테스트가 통과하는가?
 - [ ] 문서가 업데이트되었는가? (필요한 경우)
