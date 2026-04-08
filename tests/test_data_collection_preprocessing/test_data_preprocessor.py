@@ -223,7 +223,7 @@ class TestDatasetSaving:
         assert path.suffix == ".jsonl"
 
         # Verify content
-        with open(path, "r") as f:
+        with open(path, "r", encoding="utf-8") as f:
             lines = f.readlines()
             assert len(lines) == len(records)
 
@@ -241,7 +241,7 @@ class TestDatasetSaving:
         assert path.exists()
         assert path.suffix == ".json"
 
-        with open(path, "r") as f:
+        with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
             assert isinstance(data, list)
             assert len(data) == len(records)
