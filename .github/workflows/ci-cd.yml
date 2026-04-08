@@ -49,9 +49,6 @@ concurrency:
 
 env:
   NODE_BUILD_VERSION: "20"
-  PYTHON_BUILD_VERSION: "3.12"
-  PYTHON_MATRIX_OS: '["ubuntu-latest","macos-latest","windows-latest"]'
-  PYTHON_MATRIX_VERSIONS: '["3.10","3.11","3.12"]'
 
 jobs:
   plan-pipeline:
@@ -117,8 +114,6 @@ jobs:
           python_changed=false
           frontend_changed=false
           ci_changed=false
-          deploy_changed=false
-
           while IFS= read -r file; do
             [ -z "${file}" ] && continue
             case "${file}" in
@@ -127,7 +122,6 @@ jobs:
                 ;;
               GovOn/frontend/*)
                 frontend_changed=true
-                deploy_changed=true
                 ;;
               .github/workflows/*|.github/actions/*)
                 ci_changed=true
@@ -139,7 +133,6 @@ jobs:
             python_changed=true
             if [ "${has_frontend}" = true ]; then
               frontend_changed=true
-              deploy_changed=true
             fi
           fi
 
@@ -149,7 +142,6 @@ jobs:
 
           if [ "${FORCE_FRONTEND}" = "true" ] && [ "${has_frontend}" = true ]; then
             frontend_changed=true
-            deploy_changed=true
           fi
 
           run_python="${python_changed}"
@@ -205,10 +197,10 @@ jobs:
     if: ${{ needs.plan-pipeline.outputs.run_python == 'true' }}
     uses: ./.github/workflows/reusable-python-ci.yml
     with:
-      build-python-version: ${{ env.PYTHON_BUILD_VERSION }}
+      build-python-version: "3.12"
       dependency-file: requirements-ci.txt
-      matrix-os: ${{ env.PYTHON_MATRIX_OS }}
-      matrix-python-versions: ${{ env.PYTHON_MATRIX_VERSIONS }}
+      matrix-os: '["ubuntu-latest","macos-latest","windows-latest"]'
+      matrix-python-versions: '["3.10","3.11","3.12"]'
       pytest-command: pytest tests/test_data_collection_preprocessing -q
     secrets: inherit
 
