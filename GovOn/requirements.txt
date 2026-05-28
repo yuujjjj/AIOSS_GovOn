@@ -47,7 +47,7 @@ lxml>=4.9.0
 tqdm>=4.66.0
 python-dotenv>=1.0.0
 pyyaml>=6.0.0
-loguru>=0.7.0
+loguru>=0.7.3
 
 # Database
 sqlalchemy>=2.0.0
