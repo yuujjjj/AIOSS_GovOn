@@ -1,0 +1,274 @@
+name: PR Gate
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: pr-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      runtime: ${{ steps.filter.outputs.runtime }}
+      runtime_contract: ${{ steps.filter.outputs.runtime_contract }}
+      docs: ${{ steps.filter.outputs.docs }}
+      packaging: ${{ steps.filter.outputs.packaging }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            runtime:
+              - 'src/**'
+              - 'tests/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - '.github/actions/**'
+              - '.github/scripts/run_inference_ci.sh'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/reusable-test.yml'
+            runtime_contract:
+              - 'src/inference/**'
+              - 'e2e/**'
+              - 'playwright.config.ts'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/actions/**'
+              - '.github/workflows/ci.yml'
+            docs:
+              - 'site/**'
+              - 'docs/**'
+              - 'README.md'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/deploy-pages.yml'
+            packaging:
+              - 'Dockerfile'
+              - '.dockerignore'
+              - 'docker-compose*.yml'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - '.github/workflows/docker-publish.yml'
+              - '.github/workflows/offline-package.yml'
+              - '.github/workflows/publish-package.yml'
+
+      - name: Change summary
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" << EOF
+          ### PR Gate Scope
+          | Lane | Changed |
+          |------|---------|
+          | Runtime | \`${{ steps.filter.outputs.runtime }}\` |
+          | Runtime contract | \`${{ steps.filter.outputs.runtime_contract }}\` |
+          | Docs | \`${{ steps.filter.outputs.docs }}\` |
+          | Packaging | \`${{ steps.filter.outputs.packaging }}\` |
+          EOF
+
+  lint:
+    needs: detect-changes
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      needs.detect-changes.outputs.runtime == 'true' ||
+      needs.detect-changes.outputs.packaging == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Python with uv
+        uses: ./.github/actions/setup-python-uv
+        with:
+          extras: '--extra dev'
+
+      - name: Black
+        run: uv run black --check .
+
+      - name: isort
+        run: uv run isort --check .
+
+      - name: Flake8
+        run: |
+          uv run flake8 . \
+            --count \
+            --select=E9,F63,F7,F82 \
+            --show-source \
+            --statistics \
+            --exclude=.venv,.git,__pycache__,build,dist
+
+  test:
+    needs: [detect-changes, lint]
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      needs.detect-changes.outputs.runtime == 'true' ||
+      needs.detect-changes.outputs.packaging == 'true'
+    uses: ./.github/workflows/reusable-test.yml
+    with:
+      python-versions: '["3.10", "3.11"]'
+      os-list: '["ubuntu-latest"]'
+      coverage-threshold: 80
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  security:
+    needs: [detect-changes, lint]
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      needs.detect-changes.outputs.runtime == 'true' ||
+      needs.detect-changes.outputs.packaging == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Python with uv
+        uses: ./.github/actions/setup-python-uv
+        with:
+          extras: '--extra dev'
+
+      - name: Run Bandit on runtime code
+        run: uv run bandit -r src/inference -lll -x tests
+
+  runtime-contract:
+    needs: [detect-changes, test]
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      needs.detect-changes.outputs.runtime_contract == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Python with uv
+        uses: ./.github/actions/setup-python-uv
+        with:
+          python-version: '3.10'
+          extras: '--extra dev'
+
+      - name: Install runtime dependencies for contract tests
+        run: |
+          uv pip install --python .venv/bin/python \
+            'fastapi>=0.100.0' \
+            'uvicorn>=0.23.0' \
+            'rank-bm25>=0.2.2' \
+            'faiss-cpu>=1.7.4' \
+            'sentence-transformers>=3.0.0'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Run shell-first runtime contract tests
+        env:
+          API_KEY: dev-e2e-key
+          CI: true
+          GOVON_API_KEY: dev-e2e-key
+          GOVON_RUNTIME_BASE_URL: http://127.0.0.1:8000
+          SERVING_PROFILE: local
+          SKIP_MODEL_LOAD: "true"
+        run: |
+          set -euo pipefail
+
+          mkdir -p test-results playwright-report
+
+          .venv/bin/python -m uvicorn src.inference.api_server:app \
+            --host 127.0.0.1 \
+            --port 8000 \
+            > test-results/runtime-server.log 2>&1 &
+          SERVER_PID=$!
+
+          cleanup() {
+            if kill -0 "$SERVER_PID" 2>/dev/null; then
+              kill "$SERVER_PID" 2>/dev/null || true
+              wait "$SERVER_PID" 2>/dev/null || true
+            fi
+          }
+          trap cleanup EXIT
+
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/health > /dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+
+          curl -fsS http://127.0.0.1:8000/health > /dev/null
+          npx playwright test
+
+      - name: Upload runtime contract artifacts
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: runtime-contract-report
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 7
+
+  docs-build:
+    needs: detect-changes
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      needs.detect-changes.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+
+      - name: Install MkDocs dependencies
+        run: pip install -r site/requirements-docs.txt
+
+      - name: Build docs with strict mode
+        run: cd site && mkdocs build --strict
+
+      - name: Upload docs artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: docs-site-preview
+          path: site/site
+          retention-days: 7
+
+  build:
+    needs: [detect-changes, test]
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      needs.detect-changes.outputs.runtime == 'true' ||
+      needs.detect-changes.outputs.packaging == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+
+      - name: Build Python package
+        run: uv build
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist-package
+          path: dist/
+          retention-days: 14

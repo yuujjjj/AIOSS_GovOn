@@ -1,0 +1,60 @@
+name: Reusable Test
+
+on:
+  workflow_call:
+    inputs:
+      python-versions:
+        description: 'JSON array of Python versions'
+        required: false
+        type: string
+        default: '["3.10", "3.11"]'
+      os-list:
+        description: 'JSON array of OS'
+        required: false
+        type: string
+        default: '["ubuntu-latest"]'
+      coverage-threshold:
+        description: 'Minimum coverage percentage'
+        required: false
+        type: number
+        default: 80
+    secrets:
+      CODECOV_TOKEN:
+        required: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ${{ fromJSON(inputs.python-versions) }}
+        os: ${{ fromJSON(inputs.os-list) }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Python with uv
+        uses: ./.github/actions/setup-python-uv
+        with:
+          python-version: ${{ matrix.python-version }}
+          extras: '--extra dev --extra inference --extra database'
+
+      - name: Run PR-safe inference suite
+        run: bash .github/scripts/run_inference_ci.sh ${{ inputs.coverage-threshold }}
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          file: ./coverage.xml
+          fail_ci_if_error: false
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: ./coverage.xml
+          retention-days: 7
