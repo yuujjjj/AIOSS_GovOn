@@ -1,0 +1,18 @@
+# Global fallback owners
+* @yuujjjj @umyunsang
+
+# Documentation
+/README.md @yuujjjj
+/CONTRIBUTING.md @yuujjjj
+/CODE_OF_CONDUCT.md @yuujjjj @umyunsang
+/GOVERNANCE.md @yuujjjj @umyunsang
+/docs/ @yuujjjj
+
+# Application code and tests
+/src/ @yuujjjj @umyunsang
+/tests/ @yuujjjj @siuJang
+/configs/ @yuujjjj
+/scripts/ @yuujjjj
+
+# Repository automation
+/.github/ @yuujjjj

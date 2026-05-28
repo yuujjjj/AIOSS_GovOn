@@ -1,12 +1,12 @@
 {
-  "timestamp": "2026-04-08T11:16:32Z",
+  "timestamp": "2026-04-13T03:19:38Z",
   "window_days": 30,
   "period": "last_30_days",
   "grade": "High",
   "primary_branch": "main",
   "develop": {
     "deployment_frequency": {
-      "weekly": 1,
+      "weekly": 0,
       "window_total": 4,
       "avg_per_week": 0.93
     },
@@ -17,9 +17,9 @@
       "sample_count": 4
     },
     "change_failure_rate": {
-      "rate_percent": 17.5,
-      "failure_commits": 24,
-      "total_commits": 137
+      "rate_percent": 18.9,
+      "failure_commits": 20,
+      "total_commits": 106
     },
     "mean_time_to_recovery": {
       "avg_seconds": 0,
