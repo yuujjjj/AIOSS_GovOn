@@ -1,7 +1,19 @@
 {
-  "name": "frontend",
-  "version": "0.1.0",
-  "private": true,
+  "name": "@yuujjjj/govon-frontend",
+  "version": "1.0.1",
+  "private": false,
+  "description": "GovOn frontend application package for GitHub Packages deployment.",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "files": [
+    "app",
+    "public",
+    "next.config.ts",
+    "postcss.config.mjs",
+    "README.md",
+    "tsconfig.json"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
