@@ -48,7 +48,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  NODE_BUILD_VERSION: "20"
+  NODE_BUILD_VERSION: "22"
 
 jobs:
   plan-pipeline:
@@ -249,6 +249,7 @@ jobs:
       - name: Build static export
         working-directory: GovOn/frontend
         env:
+          NEXT_PUBLIC_BASE_PATH: /AIOSS_GovOn
           NEXT_PUBLIC_API_BASE_URL: ${{ secrets.NEXT_PUBLIC_API_BASE_URL }}
           NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
         run: npm run build

@@ -1,0 +1,177 @@
+name: Frontend PR Preview
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "GovOn/frontend/**"
+      - ".github/workflows/frontend-preview.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: frontend-preview-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  build:
+    name: Build Static Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: GovOn/frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: GovOn/frontend
+        run: npm ci
+
+      - name: Lint
+        working-directory: GovOn/frontend
+        run: npm run lint
+
+      - name: Build Vercel-compatible static export
+        working-directory: GovOn/frontend
+        run: npm run build
+
+      - name: Upload preview artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-preview-static
+          path: GovOn/frontend/out
+          if-no-files-found: error
+
+  vercel-preview:
+    name: Deploy Vercel Preview
+    needs: build
+    runs-on: ubuntu-latest
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - name: Check Vercel secrets
+        id: vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          if [ -n "$VERCEL_TOKEN" ] && [ -n "$VERCEL_ORG_ID" ] && [ -n "$VERCEL_PROJECT_ID" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### Frontend Preview"
+              echo ""
+              echo "Vercel preview deployment was skipped because one or more secrets are missing."
+              echo ""
+              echo "Required secrets: \`VERCEL_TOKEN\`, \`VERCEL_ORG_ID\`, \`VERCEL_PROJECT_ID\`."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Checkout repository
+        if: steps.vercel.outputs.available == 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        if: steps.vercel.outputs.available == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: GovOn/frontend/package-lock.json
+
+      - name: Install dependencies
+        if: steps.vercel.outputs.available == 'true'
+        working-directory: GovOn/frontend
+        run: npm ci
+
+      - name: Pull Vercel project settings
+        if: steps.vercel.outputs.available == 'true'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: npx --yes vercel@latest pull --yes --environment=preview --token "$VERCEL_TOKEN" --cwd GovOn/frontend
+
+      - name: Build preview
+        if: steps.vercel.outputs.available == 'true'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: npx --yes vercel@latest build --token "$VERCEL_TOKEN" --cwd GovOn/frontend
+
+      - name: Deploy preview
+        if: steps.vercel.outputs.available == 'true'
+        id: deploy
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          npx --yes vercel@latest deploy --prebuilt --yes --token "$VERCEL_TOKEN" --cwd GovOn/frontend > vercel-deploy.log
+          cat vercel-deploy.log
+          URL="$(grep -Eo 'https://[^[:space:]]+\.vercel\.app[^[:space:]]*' vercel-deploy.log | tail -1)"
+          if [ -z "$URL" ]; then
+            echo "::error::Could not determine Vercel preview URL."
+            exit 1
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Frontend Preview"
+            echo ""
+            echo "Preview URL: $URL"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment preview URL
+        if: steps.vercel.outputs.available == 'true' && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = '<!-- govon-frontend-preview -->';
+            const body = [
+              marker,
+              '### Frontend PR Preview',
+              '',
+              '| Item | Value |',
+              '|---|---|',
+              `| Preview URL | ${{ steps.deploy.outputs.url }} |`,
+              `| Commit | \`${context.sha.slice(0, 7)}\` |`,
+            ].join('\n');
+
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const existing = comments.data.find((comment) => comment.body?.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
