@@ -86,7 +86,7 @@ korean-nlp = [
 ]
 
 inference = [
-    "vllm>=0.14.1",
+    "vllm>=0.21.0",
     "fastapi>=0.100.0",
     "uvicorn>=0.23.0",
     "rank-bm25>=0.2.2",
