@@ -1,0 +1,160 @@
+name: npm Security Scan
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "GovOn/frontend/**"
+      - ".github/workflows/npm-security.yml"
+  push:
+    branches: [main]
+    paths:
+      - "GovOn/frontend/**"
+      - ".github/workflows/npm-security.yml"
+  schedule:
+    - cron: "0 0 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: npm-security-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    env:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+    defaults:
+      run:
+        working-directory: GovOn/frontend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: GovOn/frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run npm audit
+        run: npm audit --json > npm-audit-report.json || true
+
+      - name: Summarize npm audit
+        id: npm-audit
+        run: |
+          node - <<'NODE'
+          const fs = require("fs");
+          const out = process.env.GITHUB_OUTPUT;
+          const report = JSON.parse(fs.readFileSync("npm-audit-report.json", "utf8"));
+          const total = report.metadata?.vulnerabilities?.total ?? 0;
+          const high = report.metadata?.vulnerabilities?.high ?? 0;
+          const critical = report.metadata?.vulnerabilities?.critical ?? 0;
+          fs.appendFileSync(out, `total=${total}\n`);
+          fs.appendFileSync(out, `high=${high}\n`);
+          fs.appendFileSync(out, `critical=${critical}\n`);
+          console.log(`npm audit vulnerabilities: total=${total}, high=${high}, critical=${critical}`);
+          NODE
+
+      - name: Run Snyk scan
+        if: env.SNYK_TOKEN != ''
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          npm install --global snyk
+          snyk test --json-file-output=snyk-report.json || true
+
+      - name: Mark Snyk as skipped
+        if: env.SNYK_TOKEN == ''
+        run: |
+          printf '{"skipped":true,"reason":"SNYK_TOKEN secret is not configured"}\n' > snyk-report.json
+
+      - name: Summarize Snyk
+        id: snyk
+        run: |
+          node - <<'NODE'
+          const fs = require("fs");
+          const out = process.env.GITHUB_OUTPUT;
+          const report = JSON.parse(fs.readFileSync("snyk-report.json", "utf8"));
+          const skipped = report.skipped === true;
+          const total = skipped ? 0 : Array.isArray(report.vulnerabilities) ? report.vulnerabilities.length : 0;
+          fs.appendFileSync(out, `skipped=${skipped}\n`);
+          fs.appendFileSync(out, `total=${total}\n`);
+          console.log(`Snyk vulnerabilities: total=${total}, skipped=${skipped}`);
+          NODE
+
+      - name: Upload security reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-security-reports
+          path: |
+            GovOn/frontend/npm-audit-report.json
+            GovOn/frontend/snyk-report.json
+          retention-days: 30
+
+      - name: Create or update security issue
+        if: ${{ always() && (steps.npm-audit.outputs.total != '0' || steps.snyk.outputs.total != '0') }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = "Automated npm/Snyk security scan";
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = [
+              "## npm/Snyk security scan result",
+              "",
+              "| Scanner | Result |",
+              "|---|---|",
+              `| npm audit total | ${{ steps.npm-audit.outputs.total }} |`,
+              `| npm audit high | ${{ steps.npm-audit.outputs.high }} |`,
+              `| npm audit critical | ${{ steps.npm-audit.outputs.critical }} |`,
+              `| Snyk total | ${{ steps.snyk.outputs.total }} |`,
+              `| Snyk skipped | ${{ steps.snyk.outputs.skipped }} |`,
+              `| Workflow run | [open run](${runUrl}) |`,
+              "",
+              "Download the `npm-security-reports` artifact for the full JSON reports.",
+            ].join("\n");
+
+            const existing = await github.rest.search.issuesAndPullRequests({
+              q: `repo:${context.repo.owner}/${context.repo.repo} is:issue is:open in:title "${title}"`,
+            });
+
+            if (existing.data.items.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.data.items[0].number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+              });
+            }
+
+      - name: Security summary
+        if: always()
+        run: |
+          echo "### npm Security Scan" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Scanner | Result |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| npm audit total | ${{ steps.npm-audit.outputs.total }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| npm audit high | ${{ steps.npm-audit.outputs.high }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| npm audit critical | ${{ steps.npm-audit.outputs.critical }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Snyk total | ${{ steps.snyk.outputs.total }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Snyk skipped | ${{ steps.snyk.outputs.skipped }} |" >> "$GITHUB_STEP_SUMMARY"

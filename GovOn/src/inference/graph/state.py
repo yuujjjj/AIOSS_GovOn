@@ -1,0 +1,95 @@
+"""GovOn LangGraph state schema.
+
+Issue #415: LangGraph runtime 기반 및 planner/executor adapter 구성.
+
+이 모듈은 StateGraph의 모든 노드가 공유하는 state 타입을 정의한다.
+`GovOnGraphState`는 TypedDict로, LangGraph가 state 병합에 사용한다.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from enum import Enum
+from typing import Annotated, Any, Dict, List, Optional, Sequence
+
+from langchain_core.messages import AnyMessage
+from langgraph.graph.message import add_messages
+from typing_extensions import TypedDict
+
+
+class ApprovalStatus(str, Enum):
+    """human-in-the-loop 승인 상태."""
+
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+class TaskType(str, Enum):
+    """planner가 분류하는 작업 유형."""
+
+    DRAFT_RESPONSE = "draft_response"  # 민원 답변 초안 작성
+    REVISE_RESPONSE = "revise_response"  # 답변 수정
+    APPEND_EVIDENCE = "append_evidence"  # 근거 보강
+    LOOKUP_STATS = "lookup_stats"  # 통계/사례 조회
+
+
+@dataclass
+class ToolPlan:
+    """planner가 생성하는 구조화된 실행 계획.
+
+    Parameters
+    ----------
+    task_type : TaskType
+        작업 분류.
+    goal : str
+        사용자에게 보여줄 작업 설명 (한국어, 1-2문장).
+    reason : str
+        이 작업이 필요한 이유 (한국어, 1문장).
+    tools : List[str]
+        실행할 tool 이름 목록 (순서대로).
+        예: ["rag_search", "api_lookup", "draft_civil_response"]
+    """
+
+    task_type: TaskType
+    goal: str
+    reason: str
+    tools: List[str]
+
+
+class GovOnGraphState(TypedDict, total=False):
+    """GovOn LangGraph graph state.
+
+    모든 노드가 공유하는 state object.
+    planner와 executor가 동일한 state를 읽고 쓴다.
+
+    `messages` 필드는 `add_messages` reducer를 사용하여
+    LangGraph가 메시지를 자동 병합한다.
+    """
+
+    # --- 세션 식별 ---
+    session_id: str
+    request_id: str
+
+    # --- 메시지 히스토리 (LangGraph add_messages reducer 사용) ---
+    messages: Annotated[Sequence[AnyMessage], add_messages]
+
+    # --- planner 출력 ---
+    task_type: str  # TaskType.value
+    goal: str  # 승인 프롬프트에 표시할 작업 설명
+    reason: str  # 작업 이유
+    planned_tools: List[str]  # 실행 예정 tool 이름 리스트
+
+    # --- approval gate ---
+    approval_status: str  # ApprovalStatus.value
+
+    # --- executor 출력 ---
+    tool_results: Dict[str, Any]  # {tool_name: result_dict, ...}
+    accumulated_context: Dict[str, Any]  # tool 간 전달되는 누적 컨텍스트
+
+    # --- synthesis 출력 ---
+    final_text: str  # 최종 사용자 응답 텍스트
+
+    # --- 메타데이터 ---
+    error: Optional[str]
+    total_latency_ms: float

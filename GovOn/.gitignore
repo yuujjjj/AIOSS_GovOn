@@ -1,0 +1,122 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+!frontend/.vscode/
+!frontend/.vscode/settings.json
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# ML/DL
+*.pt
+*.pth
+*.onnx
+*.bin
+*.safetensors
+wandb/
+mlruns/
+lightning_logs/
+
+# Data
+data/raw/
+!data/raw/**/
+!data/raw/aihub/71852/*.zip
+data/processed/*
+!data/processed/*.jsonl
+!data/processed/*.json
+data/calibration/
+!data/calibration/*.json
+!data/calibration/*.txt
+*.csv
+*.json
+*.jsonl
+!frontend/package.json
+!frontend/package-lock.json
+!frontend/tsconfig.json
+!frontend/.vscode/settings.json
+!configs/*.json
+!docs/outputs/M2_MVP/*.json
+!src/training/*.json
+!data/processed/*.jsonl
+!data/processed/*.json
+!data/calibration/*.json
+!metrics/**/*.json
+
+# Model files (large)
+models/*.bin
+models/*.pt
+models/*.onnx
+
+# Logs
+logs/
+.cache/
+*.log
+
+# Environment variables
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+test-results/
+playwright-report/
+playwright/.cache/
+
+# Node.js (Playwright)
+node_modules/
+!package.json
+!package-lock.json
+# Tool contexts
+.gemini/
+.codex/
+.claude/
+.claude_bak/
+.gemini_bak/
+/AGENTS.md
+/frontend/AGENTS.md
+CLAUDE.md
+
+
+# Large model files (AWQ quantized, merged)
+models/awq_quantized_model/
+models/merged_model/
+*.safetensors
+*.gguf
+wandb/
