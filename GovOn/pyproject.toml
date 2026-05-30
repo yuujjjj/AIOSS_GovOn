@@ -82,7 +82,7 @@ dev = [
 
 korean-nlp = [
     "konlpy>=0.6.0",
-    "mecab-python3>=1.0.6",
+    "mecab-python3>=1.0.12",
 ]
 
 inference = [
