@@ -45,6 +45,8 @@ jobs:
 
       - name: Build Vercel-compatible static export
         working-directory: GovOn/frontend
+        env:
+          STATIC_EXPORT: "true"
         run: npm run build
 
       - name: Upload preview artifact
