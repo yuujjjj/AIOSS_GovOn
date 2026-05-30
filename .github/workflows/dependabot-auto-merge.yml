@@ -24,12 +24,26 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Enable auto-merge for minor and patch updates
-        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+      - name: Enable auto-merge for low-risk minor and patch updates
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
-        run: gh pr merge "$PR_URL" --auto --squash
+          PACKAGE_ECOSYSTEM: ${{ steps.metadata.outputs.package-ecosystem }}
+          UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
+        run: |
+          if [ "$UPDATE_TYPE" = "version-update:semver-major" ]; then
+            echo "Major update detected; manual review is required."
+            exit 0
+          fi
+
+          case "$PACKAGE_ECOSYSTEM" in
+            npm_and_yarn|github_actions|github-actions)
+              gh pr merge "$PR_URL" --auto --squash
+              ;;
+            *)
+              echo "Auto-merge is disabled for ${PACKAGE_ECOSYSTEM}; manual review is required."
+              ;;
+          esac
 
       - name: Skip major updates
         if: steps.metadata.outputs.update-type == 'version-update:semver-major'
@@ -49,4 +63,4 @@ jobs:
           echo "| Ecosystem | \`${{ steps.metadata.outputs.package-ecosystem }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Dependencies | \`${{ steps.metadata.outputs.dependency-names }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Update type | \`${{ steps.metadata.outputs.update-type }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Auto-merge | minor/patch only; major requires manual review |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Auto-merge | npm/GitHub Actions minor/patch only; pip/docker/manual-risk ecosystems require review |" >> "$GITHUB_STEP_SUMMARY"

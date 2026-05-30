@@ -1,0 +1,105 @@
+name: Setup Python CI
+description: Set up Python, restore pip cache, and optionally install CI dependencies.
+
+inputs:
+  python-version:
+    description: Python version to install.
+    required: true
+  dependency-file:
+    description: Dependency lock or requirements file used to derive the cache key.
+    required: false
+    default: requirements-ci.txt
+  enable-cache:
+    description: Whether to restore and save the pip cache.
+    required: false
+    default: "true"
+  install-dependencies:
+    description: Whether to install the dependency file.
+    required: false
+    default: "true"
+  extra-packages:
+    description: Additional packages to install after the dependency file.
+    required: false
+    default: ""
+  cache-key-prefix:
+    description: Prefix used for the pip cache key.
+    required: false
+    default: python-pip
+
+outputs:
+  cache-hit:
+    description: Whether the cache was restored from an exact key match.
+    value: ${{ steps.cache-status.outputs.cache_hit }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Resolve pip cache directory
+      id: pip-cache-dir
+      shell: bash
+      run: echo "dir=$(python -m pip cache dir)" >> "${GITHUB_OUTPUT}"
+
+    - name: Compute dependency hash
+      id: dependency-hash
+      shell: bash
+      run: |
+        set -euo pipefail
+        file="${{ inputs.dependency-file }}"
+        if [ ! -f "${file}" ]; then
+          echo "value=no-dependency-file" >> "${GITHUB_OUTPUT}"
+          exit 0
+        fi
+
+        if command -v sha256sum >/dev/null 2>&1; then
+          hash_value=$(sha256sum "${file}" | cut -d' ' -f1)
+        else
+          hash_value=$(shasum -a 256 "${file}" | cut -d' ' -f1)
+        fi
+
+        echo "value=${hash_value}" >> "${GITHUB_OUTPUT}"
+
+    - name: Restore pip cache
+      id: restore-cache
+      if: ${{ inputs.enable-cache == 'true' }}
+      uses: actions/cache/restore@v4
+      with:
+        key: ${{ inputs.cache-key-prefix }}-${{ runner.os }}-py${{ inputs.python-version }}-${{ steps.dependency-hash.outputs.value }}
+        path: ${{ steps.pip-cache-dir.outputs.dir }}
+        restore-keys: |
+          ${{ inputs.cache-key-prefix }}-${{ runner.os }}-py${{ inputs.python-version }}-
+          ${{ inputs.cache-key-prefix }}-${{ runner.os }}-
+
+    - name: Resolve cache status
+      id: cache-status
+      shell: bash
+      env:
+        RESTORED_CACHE_HIT: ${{ steps.restore-cache.outputs.cache-hit }}
+      run: |
+        if [ -n "${RESTORED_CACHE_HIT}" ]; then
+          echo "cache_hit=${RESTORED_CACHE_HIT}" >> "${GITHUB_OUTPUT}"
+        else
+          echo "cache_hit=false" >> "${GITHUB_OUTPUT}"
+        fi
+
+    - name: Install dependencies
+      if: ${{ inputs.install-dependencies == 'true' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        python -m pip install --upgrade pip
+        python -m pip install -r "${{ inputs.dependency-file }}"
+        if [ -n "${{ inputs.extra-packages }}" ]; then
+          python -m pip install ${{ inputs.extra-packages }}
+        fi
+
+    - name: Save pip cache
+      if: ${{ inputs.enable-cache == 'true' && steps.cache-status.outputs.cache_hit != 'true' }}
+      uses: actions/cache/save@v4
+      with:
+        key: ${{ inputs.cache-key-prefix }}-${{ runner.os }}-py${{ inputs.python-version }}-${{ steps.dependency-hash.outputs.value }}
+        path: ${{ steps.pip-cache-dir.outputs.dir }}

@@ -155,7 +155,7 @@ class TestCalibrationDatasetSaving:
         assert "json" in paths
         assert paths["json"].exists()
 
-        with open(paths["json"], "r") as f:
+        with open(paths["json"], "r", encoding="utf-8") as f:
             data = json.load(f)
             assert "config" in data
             assert "samples" in data
@@ -170,7 +170,7 @@ class TestCalibrationDatasetSaving:
         assert "txt" in paths
         assert paths["txt"].exists()
 
-        with open(paths["txt"], "r") as f:
+        with open(paths["txt"], "r", encoding="utf-8") as f:
             content = f.read()
             # Should contain sample texts
             assert len(content) > 0
@@ -184,7 +184,7 @@ class TestCalibrationDatasetSaving:
         assert "stats" in paths
         assert paths["stats"].exists()
 
-        with open(paths["stats"], "r") as f:
+        with open(paths["stats"], "r", encoding="utf-8") as f:
             stats = json.load(f)
             assert "total_samples" in stats
             assert "total_tokens" in stats
