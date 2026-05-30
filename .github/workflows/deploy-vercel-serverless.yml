@@ -1,0 +1,148 @@
+name: Deploy Vercel Serverless
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "GovOn/frontend/**"
+      - ".github/workflows/deploy-vercel-serverless.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-vercel-serverless
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  deploy:
+    name: Deploy Vercel Serverless
+    runs-on: ubuntu-latest
+    environment:
+      name: vercel-production
+      url: ${{ steps.deploy.outputs.url }}
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - name: Check Vercel secrets
+        id: vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          if [ -n "$VERCEL_TOKEN" ] && [ -n "$VERCEL_ORG_ID" ] && [ -n "$VERCEL_PROJECT_ID" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### Vercel Serverless Deploy"
+              echo ""
+              echo "Deployment skipped because one or more Vercel secrets are missing."
+              echo ""
+              echo "Required secrets: \`VERCEL_TOKEN\`, \`VERCEL_ORG_ID\`, \`VERCEL_PROJECT_ID\`."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Checkout repository
+        if: steps.vercel.outputs.available == 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        if: steps.vercel.outputs.available == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: GovOn/frontend/package-lock.json
+
+      - name: Install dependencies
+        if: steps.vercel.outputs.available == 'true'
+        working-directory: GovOn/frontend
+        run: npm ci
+
+      - name: Lint
+        if: steps.vercel.outputs.available == 'true'
+        working-directory: GovOn/frontend
+        run: npm run lint
+
+      - name: Pull Vercel production settings
+        if: steps.vercel.outputs.available == 'true'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: npx --yes vercel@latest pull --yes --environment=production --token "$VERCEL_TOKEN" --cwd GovOn/frontend
+
+      - name: Build production deployment
+        if: steps.vercel.outputs.available == 'true'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: npx --yes vercel@latest build --prod --token "$VERCEL_TOKEN" --cwd GovOn/frontend
+
+      - name: Deploy production
+        if: steps.vercel.outputs.available == 'true'
+        id: deploy
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          npx --yes vercel@latest deploy --prebuilt --prod --yes --token "$VERCEL_TOKEN" --cwd GovOn/frontend > vercel-deploy.log
+          cat vercel-deploy.log
+          URL="$(grep -Eo 'https://[^[:space:]]+\.vercel\.app[^[:space:]]*' vercel-deploy.log | tail -1)"
+          if [ -z "$URL" ]; then
+            echo "::error::Could not determine Vercel deployment URL."
+            exit 1
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Vercel Serverless Deploy"
+            echo ""
+            echo "| Item | Value |"
+            echo "|---|---|"
+            echo "| URL | ${URL} |"
+            echo "| Health endpoint | ${URL}/api/health |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  health-check:
+    name: Health Check
+    needs: deploy
+    if: needs.deploy.outputs.url != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check /api/health
+        run: |
+          URL="${{ needs.deploy.outputs.url }}"
+          HEALTH_URL="${URL}/api/health"
+          HEALTHY=false
+          HTTP_CODE="000"
+
+          for _ in $(seq 1 10); do
+            HTTP_CODE="$(curl -sf -o /tmp/vercel-health.json -w "%{http_code}" "${HEALTH_URL}" 2>/dev/null || echo "000")"
+            if [ "$HTTP_CODE" = "200" ]; then
+              HEALTHY=true
+              break
+            fi
+            sleep 10
+          done
+
+          {
+            echo "### Vercel Serverless Health Check"
+            echo ""
+            echo "| Item | Value |"
+            echo "|---|---|"
+            echo "| URL | ${HEALTH_URL} |"
+            echo "| HTTP code | ${HTTP_CODE} |"
+            echo "| Healthy | ${HEALTHY} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$HEALTHY" != "true" ]; then
+            exit 1
+          fi

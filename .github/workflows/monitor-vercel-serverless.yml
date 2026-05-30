@@ -1,0 +1,132 @@
+name: Vercel Serverless Monitoring
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: monitor-vercel-serverless
+  cancel-in-progress: true
+
+env:
+  VERCEL_HEALTH_URL: ${{ vars.VERCEL_HEALTH_URL || 'https://govon-frontend.vercel.app/api/health' }}
+
+jobs:
+  monitor:
+    name: Monitor Vercel Serverless
+    runs-on: ubuntu-latest
+    steps:
+      - name: Health check
+        id: health
+        continue-on-error: true
+        run: |
+          HTTP_CODE="$(curl -sf -o /tmp/vercel-health.json -w "%{http_code}" "${{ env.VERCEL_HEALTH_URL }}" 2>/dev/null || echo "000")"
+          LATENCY="$(curl -sf -o /dev/null -w "%{time_total}" "${{ env.VERCEL_HEALTH_URL }}" 2>/dev/null || echo "0")"
+
+          {
+            echo "http_code=$HTTP_CODE"
+            echo "latency=$LATENCY"
+          } >> "$GITHUB_OUTPUT"
+
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "status=healthy" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=unhealthy" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create alert issue on failure
+        if: steps.health.outputs.status == 'unhealthy'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            for (const label of [
+              { name: 'monitoring', color: '0366d6', description: 'Automated monitoring signal' },
+              { name: 'alert', color: 'd73a4a', description: 'Service health alert' },
+            ]) {
+              try {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ...label,
+                });
+              } catch (error) {
+                if (error.status !== 422) throw error;
+              }
+            }
+
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: 'monitoring,alert',
+              state: 'open',
+              per_page: 100,
+            });
+
+            if (existing.data.length === 0) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `Vercel serverless health check failed: ${new Date().toISOString()}`,
+                labels: ['monitoring', 'alert'],
+                body: [
+                  '## Vercel Serverless Monitoring Alert',
+                  '',
+                  '| Item | Value |',
+                  '|---|---|',
+                  `| URL | ${{ env.VERCEL_HEALTH_URL }} |`,
+                  `| HTTP code | ${{ steps.health.outputs.http_code }} |`,
+                  `| Detected at | ${new Date().toISOString()} |`,
+                  '',
+                  'The Vercel serverless health check failed against `/api/health`.',
+                ].join('\n'),
+              });
+            }
+
+      - name: Close alert if recovered
+        if: steps.health.outputs.status == 'healthy'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: 'monitoring,alert',
+              state: 'open',
+              per_page: 100,
+            });
+
+            for (const issue of existing.data) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: 'closed',
+                state_reason: 'completed',
+              });
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: `Vercel serverless endpoint recovered at ${new Date().toISOString()}.`,
+              });
+            }
+
+      - name: Monitoring summary
+        if: always()
+        run: |
+          {
+            echo "### Vercel Serverless Monitoring"
+            echo ""
+            echo "| Metric | Value |"
+            echo "|---|---|"
+            echo "| URL | ${{ env.VERCEL_HEALTH_URL }} |"
+            echo "| Status | ${{ steps.health.outputs.status }} |"
+            echo "| HTTP code | ${{ steps.health.outputs.http_code }} |"
+            echo "| Latency | ${{ steps.health.outputs.latency }}s |"
+            echo "| Timestamp | $(date -u +%Y-%m-%dT%H:%M:%SZ) |"
+          } >> "$GITHUB_STEP_SUMMARY"
