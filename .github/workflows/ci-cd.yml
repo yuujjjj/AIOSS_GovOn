@@ -18,7 +18,7 @@ concurrency:
 
 env:
   PYTHON_BUILD_VERSION: "3.11"
-  NODE_BUILD_VERSION: "20"
+  NODE_BUILD_VERSION: "22"
 
 jobs:
   detect-projects:
@@ -192,6 +192,7 @@ jobs:
       - name: Build static export
         working-directory: GovOn/frontend
         env:
+          NEXT_PUBLIC_BASE_PATH: /AIOSS_GovOn
           NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
           NEXT_PUBLIC_API_BASE_URL: ${{ secrets.NEXT_PUBLIC_API_BASE_URL }}
         run: npm run build
@@ -226,7 +227,7 @@ jobs:
       - name: Verify exported site
         run: |
           test -f frontend-static/index.html
-          test -f frontend-static/main/index.html
+          test -f frontend-static/main.html || test -f frontend-static/main/index.html
           grep -q "GovOn" frontend-static/index.html
 
   deploy-pages:

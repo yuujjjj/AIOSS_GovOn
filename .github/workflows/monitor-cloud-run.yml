@@ -1,0 +1,205 @@
+name: Cloud Run Monitoring
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: monitor-cloud-run
+  cancel-in-progress: true
+
+env:
+  SERVICE_NAME: ${{ vars.GCP_SERVICE_NAME || 'govon-api' }}
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID || vars.GCP_PROJECT_ID }}
+  GCP_REGION: ${{ vars.GCP_REGION || 'asia-northeast3' }}
+
+jobs:
+  monitor:
+    name: Monitor Cloud Run
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check GCP credentials
+        id: config
+        env:
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+        run: |
+          if [ -n "$GCP_SA_KEY" ] && [ -n "${{ env.GCP_PROJECT_ID }}" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### Cloud Run Monitoring"
+              echo ""
+              echo "Monitoring skipped because GCP credentials are not configured."
+              echo ""
+              echo "Required secrets: \`GCP_SA_KEY\`, \`GCP_PROJECT_ID\`."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Authenticate to Google Cloud
+        if: steps.config.outputs.available == 'true'
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        if: steps.config.outputs.available == 'true'
+        uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Get service URL
+        id: service
+        if: steps.config.outputs.available == 'true'
+        continue-on-error: true
+        run: |
+          URL="$(gcloud run services describe "${{ env.SERVICE_NAME }}" \
+            --region="${{ env.GCP_REGION }}" \
+            --project="${{ env.GCP_PROJECT_ID }}" \
+            --format='value(status.url)' 2>/dev/null || echo "")"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Health check
+        id: health
+        if: steps.config.outputs.available == 'true'
+        continue-on-error: true
+        run: |
+          URL="${{ steps.service.outputs.url }}"
+          if [ -z "$URL" ]; then
+            {
+              echo "status=unknown"
+              echo "http_code=000"
+              echo "latency=0"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          HTTP_CODE="$(curl -sf -o /tmp/health-response.json -w "%{http_code}" "${URL}/health" 2>/dev/null || echo "000")"
+          LATENCY="$(curl -sf -o /dev/null -w "%{time_total}" "${URL}/health" 2>/dev/null || echo "0")"
+
+          {
+            echo "http_code=$HTTP_CODE"
+            echo "latency=$LATENCY"
+          } >> "$GITHUB_OUTPUT"
+
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "status=healthy" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=unhealthy" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Get revision
+        id: revision
+        if: steps.config.outputs.available == 'true'
+        continue-on-error: true
+        run: |
+          REVISION="$(gcloud run revisions list \
+            --service="${{ env.SERVICE_NAME }}" \
+            --region="${{ env.GCP_REGION }}" \
+            --project="${{ env.GCP_PROJECT_ID }}" \
+            --format='value(REVISION)' \
+            --limit=1 2>/dev/null || echo "unknown")"
+          echo "value=$REVISION" >> "$GITHUB_OUTPUT"
+
+      - name: Create alert issue on failure
+        if: steps.health.outputs.status == 'unhealthy'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            for (const label of [
+              { name: 'monitoring', color: '0366d6', description: 'Automated monitoring signal' },
+              { name: 'alert', color: 'd73a4a', description: 'Service health alert' },
+            ]) {
+              try {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ...label,
+                });
+              } catch (error) {
+                if (error.status !== 422) throw error;
+              }
+            }
+
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: 'monitoring,alert',
+              state: 'open',
+              per_page: 100,
+            });
+
+            if (existing.data.length === 0) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `Cloud Run service unhealthy: ${new Date().toISOString()}`,
+                labels: ['monitoring', 'alert'],
+                body: [
+                  '## Cloud Run Monitoring Alert',
+                  '',
+                  '| Item | Value |',
+                  '|---|---|',
+                  `| Service | ${{ env.SERVICE_NAME }} |`,
+                  `| URL | ${{ steps.service.outputs.url }} |`,
+                  `| HTTP code | ${{ steps.health.outputs.http_code }} |`,
+                  `| Revision | ${{ steps.revision.outputs.value }} |`,
+                  `| Detected at | ${new Date().toISOString()} |`,
+                  '',
+                  'The Cloud Run health check failed against `/health`.',
+                ].join('\n'),
+              });
+            }
+
+      - name: Close alert if recovered
+        if: steps.health.outputs.status == 'healthy'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: 'monitoring,alert',
+              state: 'open',
+              per_page: 100,
+            });
+
+            for (const issue of existing.data) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: 'closed',
+                state_reason: 'completed',
+              });
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: `Cloud Run service recovered at ${new Date().toISOString()}.`,
+              });
+            }
+
+      - name: Monitoring summary
+        if: always()
+        run: |
+          if [ "${{ steps.config.outputs.available }}" = "true" ]; then
+            {
+              echo "### Cloud Run Monitoring"
+              echo ""
+              echo "| Metric | Value |"
+              echo "|---|---|"
+              echo "| Service | ${{ env.SERVICE_NAME }} |"
+              echo "| URL | ${{ steps.service.outputs.url }} |"
+              echo "| Status | ${{ steps.health.outputs.status }} |"
+              echo "| HTTP code | ${{ steps.health.outputs.http_code }} |"
+              echo "| Latency | ${{ steps.health.outputs.latency }}s |"
+              echo "| Revision | ${{ steps.revision.outputs.value }} |"
+              echo "| Timestamp | $(date -u +%Y-%m-%dT%H:%M:%SZ) |"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi

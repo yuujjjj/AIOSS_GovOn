@@ -1,10 +1,15 @@
 import type { NextConfig } from "next";
 
+const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+
 const nextConfig: NextConfig = {
-  output: 'export',
-  basePath: '/GovOn',
-  assetPrefix: '/GovOn/',
-  // Images optimization is not supported with static export, so we need to disable it
+  output: "export",
+  ...(basePath
+    ? {
+        basePath,
+        assetPrefix: `${basePath}/`,
+      }
+    : {}),
   images: {
     unoptimized: true,
   },
