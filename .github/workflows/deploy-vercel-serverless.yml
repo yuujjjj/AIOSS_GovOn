@@ -97,7 +97,7 @@ jobs:
           npx --yes vercel@latest deploy --prebuilt --prod --yes --token "$VERCEL_TOKEN" --cwd GovOn/frontend > vercel-deploy.log
           cat vercel-deploy.log
           DEPLOYMENT_URL="$(grep -Eo 'https://[^[:space:]]+\.vercel\.app[^[:space:]]*' vercel-deploy.log | tail -1)"
-          ALIAS_URL="$(sed -nE 's/.*Aliased[[:space:]]+(https:\/\/[^[:space:]]+\.vercel\.app[^[:space:]]*).*/\1/p' vercel-deploy.log | tail -1)"
+          ALIAS_URL="$(grep 'Aliased' vercel-deploy.log | grep -Eo 'https://[^[:space:]]+\.vercel\.app[^[:space:]]*' | tail -1)"
           URL="${ALIAS_URL:-$DEPLOYMENT_URL}"
           if [ -z "$URL" ]; then
             echo "::error::Could not determine Vercel deployment URL."
