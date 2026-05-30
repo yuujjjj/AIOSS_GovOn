@@ -47,7 +47,7 @@ dependencies = [
     "autoawq>=0.2.9",
 
     # Fine-tuning
-    "peft>=0.16.0",
+    "peft>=0.19.1",
     "trl>=1.5.1",
 
     # Data Processing
