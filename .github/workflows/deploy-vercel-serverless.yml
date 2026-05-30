@@ -17,6 +17,7 @@ concurrency:
 
 env:
   NODE_VERSION: "22"
+  VERCEL_PRODUCTION_URL: ${{ vars.VERCEL_PRODUCTION_URL || 'https://govon-frontend.vercel.app' }}
 
 jobs:
   deploy:
@@ -96,9 +97,9 @@ jobs:
         run: |
           npx --yes vercel@latest deploy --prebuilt --prod --yes --token "$VERCEL_TOKEN" --cwd GovOn/frontend > vercel-deploy.log
           cat vercel-deploy.log
-          DEPLOYMENT_URL="$(grep -Eo 'https://[^[:space:]]+\.vercel\.app[^[:space:]]*' vercel-deploy.log | tail -1)"
-          ALIAS_URL="$(grep 'Aliased' vercel-deploy.log | grep -Eo 'https://[^[:space:]]+\.vercel\.app[^[:space:]]*' | tail -1)"
-          URL="${ALIAS_URL:-$DEPLOYMENT_URL}"
+          DEPLOYMENT_URL="$(grep -Eo 'https://[^[:space:]]+\.vercel\.app[^[:space:]]*' vercel-deploy.log | tail -1 || true)"
+          URL="${{ env.VERCEL_PRODUCTION_URL }}"
+          URL="${URL%/}"
           if [ -z "$URL" ]; then
             echo "::error::Could not determine Vercel deployment URL."
             exit 1
@@ -129,7 +130,7 @@ jobs:
           HTTP_CODE="000"
 
           for _ in $(seq 1 10); do
-            HTTP_CODE="$(curl -sf -o /tmp/vercel-health.json -w "%{http_code}" "${HEALTH_URL}" 2>/dev/null || echo "000")"
+            HTTP_CODE="$(curl --max-time 15 -sf -o /tmp/vercel-health.json -w "%{http_code}" "${HEALTH_URL}" 2>/dev/null || echo "000")"
             if [ "$HTTP_CODE" = "200" ]; then
               HEALTHY=true
               break
@@ -148,5 +149,6 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
           if [ "$HEALTHY" != "true" ]; then
+            cat /tmp/vercel-health.json 2>/dev/null || true
             exit 1
           fi

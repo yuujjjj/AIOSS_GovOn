@@ -98,6 +98,10 @@ Required GitHub repository secrets:
 - `VERCEL_ORG_ID`
 - `VERCEL_PROJECT_ID`
 
+Optional GitHub repository variable:
+
+- `VERCEL_PRODUCTION_URL`, default `https://govon-frontend.vercel.app`
+
 ## Health Monitoring
 
 Workflow: `.github/workflows/monitor-vercel-serverless.yml`
@@ -153,5 +157,6 @@ The repository owner must configure external platform settings:
 
 - GitHub Pages source must be set to GitHub Actions.
 - Vercel secrets must be configured: `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`.
+- `VERCEL_PRODUCTION_URL` should be set if the production frontend domain is not `govon-frontend.vercel.app`.
 - `VERCEL_HEALTH_URL` should be set if the production domain is not `govon-frontend.vercel.app`.
 - If reviewers need unauthenticated preview access, Vercel deployment protection must be disabled for preview deployments.
