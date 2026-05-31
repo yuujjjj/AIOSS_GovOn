@@ -98,3 +98,17 @@ Verified health response:
 | Experiment event log | `docs/experiments/feature-flag-experiment-log.jsonl` |
 | Canary rollout config | `GovOn/config/canary-rollout.yml` |
 | Canary verification | `GovOn/tests/test_inference/test_feature_flags.py` validates `1% -> 10% -> 50% -> 100%` advance and failed-health rollback to `0%`. |
+
+## Testing, TDD, and E2E
+
+| Requirement | Evidence |
+|---|---|
+| Unit test framework | Vitest in `GovOn/frontend/vitest.config.ts` |
+| Coverage threshold | 80% for statements, branches, functions, and lines |
+| Core TDD implementation | `GovOn/frontend/lib/complaint-workflow.ts` |
+| Core TDD tests | `GovOn/frontend/lib/complaint-workflow.test.ts` |
+| Legacy page tests | `GovOn/frontend/app/page.test.tsx`, `GovOn/frontend/app/main/page.test.tsx`, `GovOn/frontend/app/not-found.test.tsx`, `GovOn/frontend/app/deployment-evidence/page.test.tsx` |
+| Serverless route test | `GovOn/frontend/app/api/health/route.test.ts` |
+| Playwright E2E | `GovOn/frontend/e2e/deployment-evidence.spec.ts` |
+| Failure artifacts | CI uploads `GovOn/frontend/test-results` and `GovOn/frontend/playwright-report` when E2E runs. |
+| Testing evidence doc | `docs/testing-evidence.md` |
