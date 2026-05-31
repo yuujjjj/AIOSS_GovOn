@@ -54,6 +54,34 @@ const workflowLinks = [
   },
 ];
 
+const featureFlagLinks = [
+  {
+    label: "Feature flag code",
+    href: "https://github.com/yuujjjj/AIOSS_GovOn/blob/main/GovOn/src/inference/feature_flags.py",
+    value: "flags, targeting, A/B assignment, event tracking, canary decisions",
+  },
+  {
+    label: "Feature flag tests",
+    href: "https://github.com/yuujjjj/AIOSS_GovOn/blob/main/GovOn/tests/test_inference/test_feature_flags.py",
+    value: "stable assignment, JSONL events, targeted toggles, rollback scenario",
+  },
+  {
+    label: "Experiment log",
+    href: "https://github.com/yuujjjj/AIOSS_GovOn/blob/main/docs/experiments/feature-flag-experiment-log.jsonl",
+    value: "sample exposure events",
+  },
+  {
+    label: "Rollout setting",
+    href: "https://github.com/yuujjjj/AIOSS_GovOn/blob/main/GovOn/config/canary-rollout.yml",
+    value: "1%-10%-50%-100% health-gated canary",
+  },
+  {
+    label: "Feature flag documentation",
+    href: "https://github.com/yuujjjj/AIOSS_GovOn/blob/main/docs/feature-flags-experiments-rollout.md",
+    value: "env variables, user targeting, experiments, rollback rules",
+  },
+];
+
 const requirementRows = [
   {
     requirement: "Frontend auto deployment",
@@ -88,6 +116,11 @@ const requirementRows = [
   {
     requirement: "Dependabot policy and security automation",
     evidence: "Dependabot groups, auto-merge policy, npm audit/Snyk report workflow",
+    status: "Satisfied",
+  },
+  {
+    requirement: "Feature flags, A/B tests, and canary rollout",
+    evidence: "Four runtime flags, two stable A/B experiments, event logs, and health-gated rollout config",
     status: "Satisfied",
   },
 ];
@@ -126,7 +159,7 @@ export default function DeploymentEvidencePage() {
           <p className="mt-4 max-w-3xl text-base leading-7 text-slate-700 dark:text-zinc-300">
             This page collects the unauthenticated live URLs and workflow evidence for frontend deployment,
             PR preview, Docker publishing, Vercel serverless deployment, monitoring, npm package publishing,
-            Dependabot policy, and security scanning.
+            Dependabot policy, security scanning, feature flags, A/B experiments, and canary rollout.
           </p>
           <p className="mt-3 text-sm text-slate-600 dark:text-zinc-400">Last checked: 2026-05-31 KST.</p>
         </header>
@@ -178,6 +211,15 @@ export default function DeploymentEvidencePage() {
           <h2 className="text-xl font-semibold">Workflow Evidence</h2>
           <div className="mt-5 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
             {workflowLinks.map((link) => (
+              <EvidenceLink key={link.href} {...link} />
+            ))}
+          </div>
+        </section>
+
+        <section className="border-t border-slate-200 py-8 dark:border-zinc-800">
+          <h2 className="text-xl font-semibold">Feature Flag Evidence</h2>
+          <div className="mt-5 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+            {featureFlagLinks.map((link) => (
               <EvidenceLink key={link.href} {...link} />
             ))}
           </div>

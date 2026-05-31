@@ -1,0 +1,29 @@
+name: govon-serverless-canary
+service: govon-frontend
+platform: vercel
+strategy:
+  type: health-gated-canary
+  stages:
+    - percentage: 1
+      minimum_observation_minutes: 5
+    - percentage: 10
+      minimum_observation_minutes: 10
+    - percentage: 50
+      minimum_observation_minutes: 15
+    - percentage: 100
+      minimum_observation_minutes: 30
+health_gates:
+  endpoint: https://govon-frontend.vercel.app/api/health
+  expected_http_status: 200
+  max_error_rate: 0.02
+  max_p95_latency_ms: 2500
+rollback:
+  action: set_traffic_percentage_to_0
+  trigger:
+    - health_status_not_healthy
+    - error_rate_above_threshold
+    - p95_latency_above_threshold
+verification:
+  code: GovOn/src/inference/feature_flags.py
+  tests: GovOn/tests/test_inference/test_feature_flags.py
+
