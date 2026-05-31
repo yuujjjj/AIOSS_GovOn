@@ -19,15 +19,18 @@ services:
     ports:
       - "8001:8000"
     volumes:
-      - ./models:/app/models
-      - ./data:/app/data
+      - ${GOVON_MODELS_DIR:-./models}:/app/models
+      - ${GOVON_DATA_DIR:-./data}:/app/data
       - ./agents:/app/agents
       - ./configs:/app/configs
+      - ./state:/var/lib/govon
     environment:
       - API_KEY=${API_KEY}
       - MODEL_PATH=${MODEL_PATH:-umyunsang/GovOn-EXAONE-AWQ-v2}
       - GPU_UTILIZATION=${GPU_UTILIZATION:-0.8}
       - MAX_MODEL_LEN=${MAX_MODEL_LEN:-8192}
+      - GOVON_HOME=${GOVON_HOME:-/var/lib/govon}
+      - GOVON_EXPERIMENT_DB=${GOVON_EXPERIMENT_DB:-/var/lib/govon/experiments.sqlite3}
       - DEPLOYMENT_SLOT=blue
     deploy:
       resources:
@@ -65,15 +68,18 @@ services:
     ports:
       - "8002:8000"
     volumes:
-      - ./models:/app/models
-      - ./data:/app/data
+      - ${GOVON_MODELS_DIR:-./models}:/app/models
+      - ${GOVON_DATA_DIR:-./data}:/app/data
       - ./agents:/app/agents
       - ./configs:/app/configs
+      - ./state:/var/lib/govon
     environment:
       - API_KEY=${API_KEY}
       - MODEL_PATH=${MODEL_PATH:-umyunsang/GovOn-EXAONE-AWQ-v2}
       - GPU_UTILIZATION=${GPU_UTILIZATION:-0.8}
       - MAX_MODEL_LEN=${MAX_MODEL_LEN:-8192}
+      - GOVON_HOME=${GOVON_HOME:-/var/lib/govon}
+      - GOVON_EXPERIMENT_DB=${GOVON_EXPERIMENT_DB:-/var/lib/govon/experiments.sqlite3}
       - DEPLOYMENT_SLOT=green
     deploy:
       resources:

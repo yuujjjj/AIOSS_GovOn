@@ -98,7 +98,8 @@ mkdir -p \
     "${PROJECT_DIR}/agents" \
     "${PROJECT_DIR}/configs" \
     "${PROJECT_DIR}/logs" \
-    "${PROJECT_DIR}/.cache"
+    "${PROJECT_DIR}/.cache" \
+    "${PROJECT_DIR}/state"
 echo "[OK] 볼륨 디렉토리 준비 완료"
 
 # 7. 컨테이너 실행

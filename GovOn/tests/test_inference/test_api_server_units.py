@@ -48,6 +48,7 @@ with patch("src.inference.vllm_stabilizer.apply_transformers_patch"):
     )
 
 from src.inference.index_manager import IndexType
+from src.inference.ab_testing import ExperimentStore
 from src.inference.schemas import SearchResult
 
 # ---------------------------------------------------------------------------
@@ -357,7 +358,31 @@ class TestGetFeatureFlags:
     def test_overrides_from_header(self):
         """X-Feature-Flag 헤더로 플래그를 오버라이드한다."""
         mock_request = MagicMock()
-        mock_request.headers.get.return_value = "USE_RAG_PIPELINE=false"
+        mock_request.headers.get.side_effect = lambda name: {
+            "X-Feature-Flag": "USE_RAG_PIPELINE=false"
+        }.get(name)
 
         flags = get_feature_flags(mock_request)
         assert flags.use_rag_pipeline is False
+
+    def test_participant_assignment_takes_precedence_over_header_override(self, tmp_path):
+        """실험 참가자는 요청별 헤더로 배정된 variant를 뒤집을 수 없다."""
+        original_store = manager.experiment_store
+        store = ExperimentStore(db_path=str(tmp_path / "experiments.sqlite3"), seed="test-seed")
+        manager.experiment_store = store
+        assignment = store.get_or_assign("participant-1")
+        override = (
+            "USE_RAG_PIPELINE=false" if assignment.use_rag_pipeline else "USE_RAG_PIPELINE=true"
+        )
+        mock_request = MagicMock()
+        mock_request.headers.get.side_effect = lambda name: {
+            "X-Feature-Flag": override,
+            "X-GovOn-Participant-ID": "participant-1",
+        }.get(name)
+
+        try:
+            flags = get_feature_flags(mock_request)
+        finally:
+            manager.experiment_store = original_store
+
+        assert flags.use_rag_pipeline is assignment.use_rag_pipeline

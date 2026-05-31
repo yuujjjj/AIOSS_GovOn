@@ -4,14 +4,15 @@ This directory contains information about the fine-tuned models and adapters dev
 
 All model weights are hosted on the [Hugging Face Model Hub](https://huggingface.co/umyunsang) due to file size limits.
 
-> **⚠ 폐기 안내 (2026-03-19)**: 아래 v1 모델(LoRA, Merged, AWQ)은 **잘못 학습된 LoRA 어댑터**를 기반으로 생성되었기 때문에 전량 폐기 대상입니다. 해당 모델을 사용하지 마세요. 재학습된 v2 모델로 교체 예정입니다.
+> **⚠ 폐기 안내 (2026-03-19)**: 아래 v1 모델(LoRA, Merged, AWQ)은 **잘못 학습된 LoRA 어댑터**를 기반으로 생성되었기 때문에 전량 폐기 대상입니다. 해당 모델을 사용하지 마세요. 현재 유효한 v2 모델을 사용하세요.
 
 | Model | Type | Size | 상태 |
 |-------|------|------|------|
 | ~~[civil-complaint-exaone-lora](https://huggingface.co/umyunsang/civil-complaint-exaone-lora)~~ | LoRA Adapter | - | ❌ 폐기 (잘못된 학습) |
 | ~~[civil-complaint-exaone-merged](https://huggingface.co/umyunsang/civil-complaint-exaone-merged)~~ | Full Model (BF16) | 14.56 GB | ❌ 폐기 (잘못된 LoRA 기반 병합) |
 | ~~[civil-complaint-exaone-awq](https://huggingface.co/umyunsang/civil-complaint-exaone-awq)~~ | Quantized (4-bit) | 4.94 GB | ❌ 폐기 (잘못된 병합 모델 기반 양자화) |
-| [GovOn-EXAONE-LoRA-v2](https://huggingface.co/umyunsang/GovOn-EXAONE-LoRA-v2) | LoRA Adapter v2 | - | ✅ 최신 (재학습 완료) |
+| [GovOn-EXAONE-LoRA-v2](https://huggingface.co/umyunsang/GovOn-EXAONE-LoRA-v2) | LoRA Adapter v2 | - | ✅ 유효 (재학습 완료) |
+| [GovOn-EXAONE-AWQ-v2](https://huggingface.co/umyunsang/GovOn-EXAONE-AWQ-v2) | Quantized v2 (4-bit) | - | ✅ 런타임 기본 모델 |
 
 ---
 
@@ -38,19 +39,25 @@ All model weights are hosted on the [Hugging Face Model Hub](https://huggingface
 
 ## 현재 유효 모델
 
-### GovOn-EXAONE-LoRA-v2 (최신)
+### GovOn-EXAONE-LoRA-v2
 
 - **Model Repository**: [umyunsang/GovOn-EXAONE-LoRA-v2](https://huggingface.co/umyunsang/GovOn-EXAONE-LoRA-v2)
 - **Base Model**: [LGAI-EXAONE/EXAONE-Deep-7.8B](https://huggingface.co/LGAI-EXAONE/EXAONE-Deep-7.8B)
-- **상태**: 재학습 완료, AWQ 양자화 모델은 v2 기반으로 재생성 예정
+- **상태**: 재학습 완료
+
+### GovOn-EXAONE-AWQ-v2 (런타임 기본)
+
+- **Model Repository**: [umyunsang/GovOn-EXAONE-AWQ-v2](https://huggingface.co/umyunsang/GovOn-EXAONE-AWQ-v2)
+- **상태**: v2 기반 AWQ 런타임 모델
+- **기본 설정**: `MODEL_PATH=umyunsang/GovOn-EXAONE-AWQ-v2`
 
 ---
 
-## Model Pipeline (계획)
+## Model Pipeline
 
 ```
 EXAONE-Deep-7.8B (Base)
   └─ QLoRA Fine-tuning ──→ GovOn-EXAONE-LoRA-v2 (Adapter) ✅ 완료
-       └─ merge_and_unload() ──→ Merged Model v2 (BF16) 🔜 예정
-            └─ AWQ Quantization ──→ AWQ Model v2 (4-bit) 🔜 예정
+       └─ merge_and_unload() ──→ Merged Model v2 (BF16) ✅ 완료
+            └─ AWQ Quantization ──→ GovOn-EXAONE-AWQ-v2 (4-bit) ✅ 완료
 ```

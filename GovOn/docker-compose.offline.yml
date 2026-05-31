@@ -1,6 +1,6 @@
 # 볼륨 마운트 안내:
-# ./models → /app/models (faiss_index, bm25_index 등 모든 모델 데이터 포함)
-# ./data   → /app/data   (학습/테스트 데이터)
+# ${GOVON_MODELS_DIR:-./models} → /app/models (faiss_index, bm25_index 등 모든 모델 데이터 포함)
+# ${GOVON_DATA_DIR:-./data}     → /app/data   (학습/테스트 데이터)
 
 services:
   govon-backend:
@@ -9,12 +9,13 @@ services:
     ports:
       - "${HOST_PORT:-8000}:8000"
     volumes:
-      - ./models:/app/models
-      - ./data:/app/data
+      - ${GOVON_MODELS_DIR:-./models}:/app/models
+      - ${GOVON_DATA_DIR:-./data}:/app/data
       - ./agents:/app/agents
       - ./configs:/app/configs
       - ./logs:/var/log/govon
       - ./.cache:/app/.cache
+      - ./state:/var/lib/govon
     environment:
       SERVING_PROFILE: ${SERVING_PROFILE:-airgap}
       HOST: 0.0.0.0
@@ -33,6 +34,8 @@ services:
       AGENTS_DIR: ${AGENTS_DIR:-/app/agents}
       LOG_DIR: ${LOG_DIR:-/var/log/govon}
       CACHE_DIR: ${CACHE_DIR:-/app/.cache}
+      GOVON_HOME: ${GOVON_HOME:-/var/lib/govon}
+      GOVON_EXPERIMENT_DB: ${GOVON_EXPERIMENT_DB:-/var/lib/govon/experiments.sqlite3}
       GPU_UTILIZATION: ${GPU_UTILIZATION:-0.8}
       MAX_MODEL_LEN: ${MAX_MODEL_LEN:-8192}
       SKIP_MODEL_LOAD: ${SKIP_MODEL_LOAD:-false}

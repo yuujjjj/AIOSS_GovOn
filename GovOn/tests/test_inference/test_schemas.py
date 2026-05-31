@@ -10,6 +10,7 @@ from src.inference.schemas import (
     AgentRunResponse,
     AgentTraceSchema,
     DocumentMetadataSchema,
+    FeedbackSubmitRequest,
     GenerateCivilResponseRequest,
     GenerateCivilResponseResponse,
     GenerateResponse,
@@ -138,6 +139,29 @@ class TestGenerateSchemas:
             completion_tokens=20,
         )
         assert response.complaint_id == "complaint-1"
+
+
+class TestFeedbackSchemas:
+    def test_feedback_submit_request(self):
+        request = FeedbackSubmitRequest(
+            request_id="request-1",
+            participant_id="participant-1",
+            persona_id="persona-1",
+            rating=5,
+            task_success=True,
+        )
+
+        assert request.rating == 5
+        assert request.metadata == {}
+
+    def test_feedback_rating_out_of_range_raises(self):
+        with pytest.raises(ValidationError):
+            FeedbackSubmitRequest(
+                request_id="request-1",
+                participant_id="participant-1",
+                rating=6,
+                task_success=True,
+            )
 
 
 class TestAgentSchemas:

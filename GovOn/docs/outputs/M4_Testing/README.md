@@ -1,15 +1,16 @@
 # M4: 테스트 및 문서화 (Week 13-16)
 
 **기간**: 2026-05-25 ~ 2026-06-19
-**상태**: 미시작 (0%)
-**최종 수정**: 2026-03-09
+**상태**: 진행 중
+**최종 수정**: 2026-05-31
 
 ---
 
 ## 진행 현황 요약
 
 M4 단계는 전체 시스템의 통합 테스트, 문서화, 사용자 수용 테스트(UAT), 최종 발표를 수행합니다.
-M3의 백엔드/프론트엔드(Figma MCP 기반 React/Next.js)/Docker 구현이 완료된 후 진입할 예정입니다.
+LLM 페르소나 UAT 및 RAG Feature Flag A/B 실험 경로를 먼저 구현했으며, 실제 14일 운영 결과는
+운영 종료 후 별도 리포트로 기록합니다.
 
 ---
 
@@ -27,7 +28,8 @@ M3의 백엔드/프론트엔드(Figma MCP 기반 React/Next.js)/Docker 구현이
 - [ ] README.md 최종 업데이트
 
 ### Week 15: 사용자 수용 테스트 (UAT)
-- [ ] uat_plan.md - UAT 계획서
+- [x] uat_plan.md - LLM 페르소나 UAT 및 RAG Feature Flag A/B 계획서
+- [x] ab-test-dry-run-report.md - 저장·집계 경로 검증용 합성 dry-run 리포트
 - [ ] uat_results.md - UAT 결과 리포트
 - [ ] feedback_summary.md - 피드백 요약
 
@@ -55,4 +57,4 @@ M3의 백엔드/프론트엔드(Figma MCP 기반 React/Next.js)/Docker 구현이
 ---
 
 **작성일**: 2026-03-05
-**최종 수정일**: 2026-03-09
+**최종 수정일**: 2026-05-31

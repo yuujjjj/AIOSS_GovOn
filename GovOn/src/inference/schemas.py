@@ -170,6 +170,33 @@ class AgentRunResponse(BaseModel):
     search_results: Optional[List[Dict[str, Any]]] = None
 
 
+class FeedbackSubmitRequest(BaseModel):
+    request_id: str = Field(..., min_length=1, max_length=200)
+    participant_id: str = Field(..., min_length=1, max_length=200)
+    persona_id: Optional[str] = Field(default=None, max_length=200)
+    scenario_id: Optional[str] = Field(default=None, max_length=200)
+    rating: int = Field(..., ge=1, le=5)
+    task_success: bool
+    comment: str = Field(default="", max_length=4000)
+    final_content: Optional[str] = Field(default=None, max_length=10000)
+    evaluator_model: Optional[str] = Field(default=None, max_length=200)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FeedbackSubmitResponse(BaseModel):
+    status: str
+    stored_id: int
+
+
+class ExperimentAssignmentResponse(BaseModel):
+    experiment_name: str
+    participant_id: str
+    persona_id: Optional[str] = None
+    variant: str
+    use_rag_pipeline: bool
+    assigned_at: float
+
+
 GenerateCivilResponseResponse.model_rebuild()
 GenerateResponse.model_rebuild()
 StreamResponse.model_rebuild()

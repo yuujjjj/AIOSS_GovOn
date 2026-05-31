@@ -1,9 +1,11 @@
 import sys
+import tempfile
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
 
 from src.inference.agent_loop import AgentTrace, ToolResult
+from src.inference.ab_testing import ExperimentStore
 from src.inference.session_context import SessionContext
 from src.inference.tool_router import ExecutionPlan, ToolStep, ToolType
 
@@ -88,17 +90,25 @@ class TestAgentApi:
         self.original_agent_loop = manager.agent_loop
         self.original_session_store = manager.session_store
         self.original_generate_civil_response = manager.generate_civil_response
+        self.original_experiment_store = manager.experiment_store
+        self.temp_dir = tempfile.TemporaryDirectory()
 
         manager.session_store = MagicMock()
         manager.session_store.get_or_create.side_effect = lambda session_id=None: SessionContext(
             session_id=session_id or "session-auto"
         )
         manager.session_store.db_path = "/tmp/govon-test-sessions.sqlite3"
+        manager.experiment_store = ExperimentStore(
+            db_path=f"{self.temp_dir.name}/experiments.sqlite3",
+            seed="api-test",
+        )
 
     def teardown_method(self):
         manager.agent_loop = self.original_agent_loop
         manager.session_store = self.original_session_store
         manager.generate_civil_response = self.original_generate_civil_response
+        manager.experiment_store = self.original_experiment_store
+        self.temp_dir.cleanup()
 
     def test_health_reports_sqlite_session_store(self):
         response = client.get("/health")
@@ -149,6 +159,46 @@ class TestAgentApi:
         assert body["text"] == "도로 보수 접수를 진행하겠습니다."
         assert body["trace"]["plan"] == ["rag_search", "api_lookup"]
         assert body["search_results"][0]["title"] == "도로 보수 매뉴얼"
+
+    def test_generation_exposure_feedback_and_metrics(self):
+        manager.generate_civil_response = AsyncMock(
+            return_value=(
+                _fake_output("민원 답변 초안"),
+                [],
+                [],
+            )
+        )
+        headers = {
+            "X-GovOn-Participant-ID": "participant-api-1",
+            "X-GovOn-Persona-ID": "persona-api-1",
+            "X-GovOn-Scenario-ID": "scenario-api-1",
+        }
+
+        generated = client.post(
+            "/v1/generate-civil-response",
+            headers=headers,
+            json={"prompt": "도로 보수 민원 답변 초안 작성"},
+        )
+        assert generated.status_code == 200
+
+        submitted = client.post(
+            "/feedback/submit",
+            json={
+                "request_id": generated.json()["request_id"],
+                "participant_id": "participant-api-1",
+                "persona_id": "persona-api-1",
+                "scenario_id": "scenario-api-1",
+                "rating": 4,
+                "task_success": True,
+            },
+        )
+        assert submitted.status_code == 200
+
+        metrics = client.get("/v1/experiments/rag-ab/metrics").json()
+        request_count = sum(item["request_count"] for item in metrics["variants"].values())
+        feedback_count = sum(item["feedback_count"] for item in metrics["variants"].values())
+        assert request_count == 1
+        assert feedback_count == 1
 
     def test_agent_run_rejects_stream_flag(self):
         manager.agent_loop = MagicMock()

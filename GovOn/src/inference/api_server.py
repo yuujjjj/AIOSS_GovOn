@@ -29,6 +29,7 @@ SKIP_MODEL_LOAD = os.getenv("SKIP_MODEL_LOAD", "false").lower() in ("true", "1",
 
 from .agent_loop import AgentLoop, AgentTrace
 from .agent_manager import AgentManager
+from .ab_testing import ExperimentStore, assignment_asdict
 from .bm25_indexer import BM25Indexer
 from .feature_flags import FeatureFlags
 from .hybrid_search import HybridSearchEngine, SearchMode
@@ -39,6 +40,9 @@ from .schemas import (
     AgentRunRequest,
     AgentRunResponse,
     AgentTraceSchema,
+    ExperimentAssignmentResponse,
+    FeedbackSubmitRequest,
+    FeedbackSubmitResponse,
     GenerateCivilResponseRequest,
     GenerateCivilResponseResponse,
     GenerateRequest,
@@ -135,6 +139,7 @@ class vLLMEngineManager:
         self.bm25_indexers: dict[IndexType, BM25Indexer] = {}
         self.embed_model = None
         self.feature_flags = FeatureFlags.from_env()
+        self.experiment_store = ExperimentStore()
         self.session_store = SessionStore()
         self.agent_manager = AgentManager(AGENTS_DIR)
         self.agent_loop: Optional[AgentLoop] = None
@@ -829,6 +834,10 @@ async def health():
             "use_rag_pipeline": manager.feature_flags.use_rag_pipeline,
             "model_version": manager.feature_flags.model_version,
         },
+        "experiment_store": {
+            "driver": "sqlite",
+            "path": manager.experiment_store.db_path,
+        },
         "session_store": {
             "driver": "sqlite",
             "path": manager.session_store.db_path,
@@ -847,14 +856,87 @@ def _rate_limit(limit_string: str):
 
 
 def get_feature_flags(request: Request) -> FeatureFlags:
-    header = request.headers.get("X-Feature-Flag")
-    return manager.feature_flags.override_from_header(header)
+    flags = manager.feature_flags.override_from_header(request.headers.get("X-Feature-Flag"))
+    participant_id = request.headers.get("X-GovOn-Participant-ID")
+    if participant_id:
+        assignment = manager.experiment_store.get_or_assign(
+            participant_id=participant_id,
+            persona_id=request.headers.get("X-GovOn-Persona-ID"),
+        )
+        flags = assignment.apply(flags)
+    return flags
+
+
+def _record_generation_exposure(
+    *,
+    http_request: Request,
+    request_id: str,
+    endpoint: str,
+    flags: FeatureFlags,
+    started_at: float,
+    success: bool,
+    error: Optional[str] = None,
+) -> None:
+    participant_id = http_request.headers.get("X-GovOn-Participant-ID")
+    if not participant_id:
+        return
+    try:
+        manager.experiment_store.record_exposure(
+            request_id=request_id,
+            participant_id=participant_id,
+            persona_id=http_request.headers.get("X-GovOn-Persona-ID"),
+            scenario_id=http_request.headers.get("X-GovOn-Scenario-ID"),
+            endpoint=endpoint,
+            flags=flags,
+            latency_ms=(time.monotonic() - started_at) * 1000,
+            success=success,
+            error=error,
+        )
+    except Exception as exc:
+        logger.error(f"A/B 실험 노출 저장 실패: {exc}", exc_info=True)
+
+
+@app.get(
+    "/v1/experiments/rag-ab/assignment",
+    response_model=ExperimentAssignmentResponse,
+)
+async def get_rag_ab_assignment(
+    participant_id: str,
+    persona_id: Optional[str] = None,
+    _: None = Depends(verify_api_key),
+):
+    assignment = manager.experiment_store.get_or_assign(
+        participant_id=participant_id,
+        persona_id=persona_id,
+    )
+    return ExperimentAssignmentResponse(**assignment_asdict(assignment))
+
+
+@app.get("/v1/experiments/rag-ab/metrics")
+async def get_rag_ab_metrics(days: int = 14, _: None = Depends(verify_api_key)):
+    try:
+        return manager.experiment_store.summarize(days=days)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/feedback/submit", response_model=FeedbackSubmitResponse)
+async def submit_feedback(
+    request: FeedbackSubmitRequest,
+    _: None = Depends(verify_api_key),
+):
+    try:
+        stored_id = manager.experiment_store.record_feedback(**request.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return FeedbackSubmitResponse(status="success", stored_id=stored_id)
 
 
 @app.post("/v1/generate-civil-response", response_model=GenerateCivilResponseResponse)
 @_rate_limit("30/minute")
 async def generate_civil_response(
     request: GenerateCivilResponseRequest,
+    http_request: Request,
     _: None = Depends(verify_api_key),
     flags: FeatureFlags = Depends(get_feature_flags),
 ):
@@ -862,14 +944,32 @@ async def generate_civil_response(
         raise HTTPException(status_code=400, detail="민원 답변 스트리밍은 /v1/stream을 사용하세요.")
 
     request_id = str(uuid.uuid4())
+    started_at = time.monotonic()
     final_output, retrieved_cases, search_results = await manager.generate_civil_response(
         request,
         request_id,
         flags,
     )
     if final_output is None:
+        _record_generation_exposure(
+            http_request=http_request,
+            request_id=request_id,
+            endpoint="/v1/generate-civil-response",
+            flags=flags,
+            started_at=started_at,
+            success=False,
+            error="generation_failed",
+        )
         raise HTTPException(status_code=500, detail="민원 답변 생성에 실패했습니다.")
 
+    _record_generation_exposure(
+        http_request=http_request,
+        request_id=request_id,
+        endpoint="/v1/generate-civil-response",
+        flags=flags,
+        started_at=started_at,
+        success=True,
+    )
     return GenerateCivilResponseResponse(
         request_id=request_id,
         complaint_id=request.complaint_id,
@@ -885,6 +985,7 @@ async def generate_civil_response(
 @_rate_limit("30/minute")
 async def generate(
     request: GenerateRequest,
+    http_request: Request,
     _: None = Depends(verify_api_key),
     flags: FeatureFlags = Depends(get_feature_flags),
 ):
@@ -892,10 +993,28 @@ async def generate(
         raise HTTPException(status_code=400, detail="Use /v1/stream for streaming.")
 
     request_id = str(uuid.uuid4())
+    started_at = time.monotonic()
     final_output, retrieved_cases = await manager.generate(request, request_id, flags)
     if final_output is None:
+        _record_generation_exposure(
+            http_request=http_request,
+            request_id=request_id,
+            endpoint="/v1/generate",
+            flags=flags,
+            started_at=started_at,
+            success=False,
+            error="generation_failed",
+        )
         raise HTTPException(status_code=500, detail="Generation failed.")
 
+    _record_generation_exposure(
+        http_request=http_request,
+        request_id=request_id,
+        endpoint="/v1/generate",
+        flags=flags,
+        started_at=started_at,
+        success=True,
+    )
     return GenerateResponse(
         request_id=request_id,
         complaint_id=request.complaint_id,
@@ -910,6 +1029,7 @@ async def generate(
 @_rate_limit("30/minute")
 async def stream_generate(
     request: GenerateRequest,
+    http_request: Request,
     _: None = Depends(verify_api_key),
     flags: FeatureFlags = Depends(get_feature_flags),
 ):
@@ -917,6 +1037,7 @@ async def stream_generate(
         request.stream = True
 
     request_id = str(uuid.uuid4())
+    started_at = time.monotonic()
     results_stream, retrieved_cases, search_results = await manager.generate_stream(
         request,
         request_id,
@@ -932,6 +1053,14 @@ async def stream_generate(
             finished = request_output.finished
             if finished:
                 text = manager._strip_thought_blocks(text)
+                _record_generation_exposure(
+                    http_request=http_request,
+                    request_id=request_id,
+                    endpoint="/v1/stream",
+                    flags=flags,
+                    started_at=started_at,
+                    success=True,
+                )
 
             response_obj = {"request_id": request_id, "text": text, "finished": finished}
             if finished:
