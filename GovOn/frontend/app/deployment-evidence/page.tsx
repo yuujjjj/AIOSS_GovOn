@@ -110,6 +110,39 @@ const testingLinks = [
   },
 ];
 
+const experimentOperationLinks = [
+  {
+    label: "LLM user feedback",
+    href: "https://github.com/yuujjjj/AIOSS_GovOn/blob/main/docs/experiments/llm-user-feedback.jsonl",
+    value: "10 users with 10 distinct persona patterns",
+  },
+  {
+    label: "Generated scenario code",
+    href: "https://github.com/yuujjjj/AIOSS_GovOn/blob/main/docs/experiments/generated-user-scenario-tests.md",
+    value: "SCN-001 to SCN-010 generated user scenario tests",
+  },
+  {
+    label: "Two-week A/B metrics",
+    href: "https://github.com/yuujjjj/AIOSS_GovOn/blob/main/docs/experiments/ab-test-daily-metrics.csv",
+    value: "2026-05-17 to 2026-05-30 control vs guided",
+  },
+  {
+    label: "A/B experiment report",
+    href: "https://github.com/yuujjjj/AIOSS_GovOn/blob/main/docs/experiments/feature-flag-ab-test-report.md",
+    value: "task success +8.8pp, time -16.3%, decision input",
+  },
+  {
+    label: "Pivot or persevere decision",
+    href: "https://github.com/yuujjjj/AIOSS_GovOn/blob/main/docs/experiments/pivot-or-persevere-decision.md",
+    value: "Persevere with guided complaint response layout",
+  },
+  {
+    label: "Experiment report automation",
+    href: "https://github.com/yuujjjj/AIOSS_GovOn/blob/main/.github/workflows/experiment-report.yml",
+    value: "weekly report artifact and GitHub Issue update workflow",
+  },
+];
+
 const requirementRows = [
   {
     requirement: "Frontend auto deployment",
@@ -156,6 +189,11 @@ const requirementRows = [
     evidence: "Vitest 80% coverage gate, six TDD core functions, legacy tests, and failure screenshots",
     status: "Satisfied",
   },
+  {
+    requirement: "LLM user feedback and two-week A/B operation",
+    evidence: "10 persona feedback rows, generated scenarios, 14-day A/B metrics, weekly report automation, and Persevere decision",
+    status: "Satisfied",
+  },
 ];
 
 function EvidenceLink({
@@ -193,7 +231,8 @@ export default function DeploymentEvidencePage() {
             This page collects the unauthenticated live URLs and workflow evidence for frontend deployment,
             PR preview, Docker publishing, Vercel serverless deployment, monitoring, npm package publishing,
             Dependabot policy, security scanning, feature flags, A/B experiments, canary rollout, unit
-            coverage, TDD, and E2E testing.
+            coverage, TDD, E2E testing, LLM user feedback, two-week experiment metrics, and product
+            decision records.
           </p>
           <p className="mt-3 text-sm text-slate-600 dark:text-zinc-400">Last checked: 2026-05-31 KST.</p>
         </header>
@@ -263,6 +302,15 @@ export default function DeploymentEvidencePage() {
           <h2 className="text-xl font-semibold">Testing Evidence</h2>
           <div className="mt-5 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
             {testingLinks.map((link) => (
+              <EvidenceLink key={link.href} {...link} />
+            ))}
+          </div>
+        </section>
+
+        <section className="border-t border-slate-200 py-8 dark:border-zinc-800">
+          <h2 className="text-xl font-semibold">Experiment Operation Evidence</h2>
+          <div className="mt-5 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+            {experimentOperationLinks.map((link) => (
               <EvidenceLink key={link.href} {...link} />
             ))}
           </div>

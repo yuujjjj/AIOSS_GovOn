@@ -99,6 +99,19 @@ Verified health response:
 | Canary rollout config | `GovOn/config/canary-rollout.yml` |
 | Canary verification | `GovOn/tests/test_inference/test_feature_flags.py` validates `1% -> 10% -> 50% -> 100%` advance and failed-health rollback to `0%`. |
 
+## User Feedback and A/B Experiment Operation
+
+| Requirement | Evidence |
+|---|---|
+| 10 LLM user personas | `docs/experiments/llm-user-feedback.jsonl` contains 10 unique `persona_pattern` values. |
+| Scenario-based generated code | `docs/experiments/generated-user-scenario-tests.md` maps `SCN-001` to `SCN-010` to the feedback panel. |
+| Two-week feature-flag A/B metrics | `docs/experiments/ab-test-daily-metrics.csv` covers 2026-05-17 to 2026-05-30 for `control` and `guided`. |
+| Experiment report | `docs/experiments/feature-flag-ab-test-report.md` summarizes metric deltas and feedback. |
+| Pivot/persevere decision | `docs/experiments/pivot-or-persevere-decision.md` records the Persevere decision. |
+| Experiment backlog | `docs/experiments/experiment-backlog.md` records follow-up items from feedback and metrics. |
+| Report automation | `.github/workflows/experiment-report.yml` validates the data, uploads report artifacts, and opens or updates a GitHub issue. |
+| Backlog issue template | `.github/ISSUE_TEMPLATE/experiment_backlog.yml` supports experiment backlog issue creation. |
+
 ## Testing, TDD, and E2E
 
 | Requirement | Evidence |

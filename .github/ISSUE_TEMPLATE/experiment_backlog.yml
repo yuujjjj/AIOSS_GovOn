@@ -1,0 +1,46 @@
+name: Experiment Backlog Item
+description: Track a feature-flag experiment hypothesis, metric gap, or follow-up action.
+title: "[Experiment] "
+labels:
+  - experiment
+  - product-discovery
+body:
+  - type: input
+    id: experiment_key
+    attributes:
+      label: Experiment key
+      placeholder: complaint_response_layout
+    validations:
+      required: true
+  - type: dropdown
+    id: item_type
+    attributes:
+      label: Item type
+      options:
+        - hypothesis
+        - metric
+        - user-feedback
+        - rollout-decision
+        - follow-up
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Link the feedback row, metric report, or decision record that created this item.
+      placeholder: docs/experiments/llm-user-feedback.jsonl#LLM-UF-001
+    validations:
+      required: true
+  - type: textarea
+    id: action
+    attributes:
+      label: Proposed action
+      placeholder: Add a deadline prominence treatment to the next guided-layout iteration.
+    validations:
+      required: true
+  - type: input
+    id: success_metric
+    attributes:
+      label: Success metric
+      placeholder: follow-up rate decreases by 3pp without reducing satisfaction
