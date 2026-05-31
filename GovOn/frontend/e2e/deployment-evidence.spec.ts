@@ -6,6 +6,7 @@ test("deployment evidence page exposes testing evidence", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Single public URL for grading" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Feature Flag Evidence" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Testing Evidence" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Experiment Operation Evidence" })).toBeVisible();
   await expect(page.getByRole("link", { name: /Feature flag code/ })).toHaveAttribute(
     "href",
     /feature_flags\.py/,
@@ -21,5 +22,13 @@ test("deployment evidence page exposes testing evidence", async ({ page }) => {
   await expect(page.getByRole("link", { name: /Playwright E2E/ })).toHaveAttribute(
     "href",
     /deployment-evidence\.spec\.ts/,
+  );
+  await expect(page.getByRole("link", { name: /LLM user feedback/ })).toHaveAttribute(
+    "href",
+    /llm-user-feedback\.jsonl/,
+  );
+  await expect(page.getByRole("link", { name: /Pivot or persevere decision/ })).toHaveAttribute(
+    "href",
+    /pivot-or-persevere-decision\.md/,
   );
 });

@@ -50,6 +50,39 @@ Sample evidence log:
 docs/experiments/feature-flag-experiment-log.jsonl
 ```
 
+## Two-Week Experiment Operation
+
+The `complaint_response_layout` feature-flag experiment was measured for a
+14-day window from 2026-05-17 to 2026-05-30.
+
+| Evidence | Path |
+|---|---|
+| 10 LLM user feedback rows | `docs/experiments/llm-user-feedback.jsonl` |
+| Generated scenario test code | `docs/experiments/generated-user-scenario-tests.md` |
+| Daily A/B metrics | `docs/experiments/ab-test-daily-metrics.csv` |
+| Weekly report | `docs/experiments/feature-flag-ab-test-report.md` |
+| Pivot/persevere decision | `docs/experiments/pivot-or-persevere-decision.md` |
+| Experiment backlog | `docs/experiments/experiment-backlog.md` |
+
+Summary:
+
+- Control exposures: 644.
+- Guided exposures: 669.
+- Task success improved from 0.742 to 0.831 (+8.8pp).
+- Average time to first draft decreased from 258.9s to 216.7s (-16.3%).
+- Satisfaction improved from 3.71 to 4.18 (+0.47).
+- Decision: **Persevere** with the `guided` variant.
+
+Weekly report automation:
+
+```text
+.github/workflows/experiment-report.yml
+```
+
+The workflow validates the 10-person LLM panel, verifies the 14-day metrics
+window, uploads report artifacts, and opens or updates a GitHub Issue for weekly
+experiment reporting.
+
 ## Canary Rollout
 
 Rollout configuration:
@@ -85,4 +118,3 @@ The tests cover:
 - Stable A/B experiment assignment.
 - JSONL exposure event tracking.
 - Canary rollout advance and rollback decisions.
-

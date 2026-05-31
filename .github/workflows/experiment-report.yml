@@ -1,0 +1,71 @@
+name: Experiment Weekly Report
+
+on:
+  schedule:
+    # 09:00 KST every Monday.
+    - cron: "0 0 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  feature-flag-experiment-report:
+    name: Feature Flag Experiment Report
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Generate experiment report
+        run: |
+          mkdir -p artifacts
+          python GovOn/scripts/evaluate_experiment_evidence.py \
+            --feedback docs/experiments/llm-user-feedback.jsonl \
+            --metrics docs/experiments/ab-test-daily-metrics.csv \
+            --report artifacts/feature-flag-ab-test-report.md \
+            --summary artifacts/feature-flag-ab-test-summary.json
+
+      - name: Upload experiment report artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: feature-flag-ab-test-report
+          path: artifacts
+          if-no-files-found: error
+
+      - name: Open or update weekly report issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          REPORT_TITLE: Experiment weekly report - feature-flag AB
+        run: |
+          set -euo pipefail
+
+          gh label create experiment --repo "${REPO}" --color "0E8A16" --description "Feature flag experiment work" || true
+          gh label create product-discovery --repo "${REPO}" --color "5319E7" --description "Discovery metric and feedback work" || true
+
+          issue_number="$(gh issue list \
+            --repo "${REPO}" \
+            --state open \
+            --search "${REPORT_TITLE} in:title" \
+            --json number \
+            --jq '.[0].number // empty')"
+
+          if [ -n "${issue_number}" ]; then
+            gh issue edit "${issue_number}" \
+              --repo "${REPO}" \
+              --body-file artifacts/feature-flag-ab-test-report.md
+          else
+            gh issue create \
+              --repo "${REPO}" \
+              --title "${REPORT_TITLE}" \
+              --label experiment \
+              --label product-discovery \
+              --body-file artifacts/feature-flag-ab-test-report.md
+          fi

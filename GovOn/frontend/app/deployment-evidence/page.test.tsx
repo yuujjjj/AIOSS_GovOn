@@ -8,11 +8,18 @@ describe("Deployment evidence page", () => {
 
     expect(screen.getByRole("heading", { name: "Single public URL for grading" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Feature Flag Evidence" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Experiment Operation Evidence" })).toBeTruthy();
     expect(screen.getByRole("link", { name: /Feature flag code/ }).getAttribute("href")).toContain(
       "feature_flags.py",
     );
     expect(screen.getByRole("link", { name: /Rollout setting/ }).getAttribute("href")).toContain(
       "canary-rollout.yml",
     );
+    expect(screen.getByRole("link", { name: /LLM user feedback/ }).getAttribute("href")).toContain(
+      "llm-user-feedback.jsonl",
+    );
+    expect(
+      screen.getByRole("link", { name: /Pivot or persevere decision/ }).getAttribute("href"),
+    ).toContain("pivot-or-persevere-decision.md");
   });
 });
