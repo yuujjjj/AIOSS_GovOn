@@ -1,0 +1,4 @@
+{"bucket":8356,"event":"experiment_exposure","experiment_key":"complaint_response_layout","metadata":{"request_id":"demo-001","source":"documented-verification"},"timestamp":"2026-05-31T00:00:00+00:00","user_id":"pilot-user-001","variant":"guided"}
+{"bucket":4107,"event":"experiment_exposure","experiment_key":"answer_tone","metadata":{"request_id":"demo-001","source":"documented-verification"},"timestamp":"2026-05-31T00:00:00+00:00","user_id":"pilot-user-001","variant":"formal"}
+{"bucket":6813,"event":"experiment_exposure","experiment_key":"complaint_response_layout","metadata":{"request_id":"demo-002","source":"documented-verification"},"timestamp":"2026-05-31T00:05:00+00:00","user_id":"pilot-user-002","variant":"guided"}
+{"bucket":9913,"event":"experiment_exposure","experiment_key":"answer_tone","metadata":{"request_id":"demo-002","source":"documented-verification"},"timestamp":"2026-05-31T00:05:00+00:00","user_id":"pilot-user-002","variant":"plain_language"}

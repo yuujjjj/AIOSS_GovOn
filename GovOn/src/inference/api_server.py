@@ -5,7 +5,7 @@ import re
 import time
 import uuid
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
@@ -30,7 +30,7 @@ SKIP_MODEL_LOAD = os.getenv("SKIP_MODEL_LOAD", "false").lower() in ("true", "1",
 from .agent_loop import AgentLoop, AgentTrace
 from .agent_manager import AgentManager
 from .bm25_indexer import BM25Indexer
-from .feature_flags import FeatureFlags
+from .feature_flags import FeatureFlags, assign_all_experiments, track_experiment_exposure
 from .hybrid_search import HybridSearchEngine, SearchMode
 from .index_manager import IndexType, MultiIndexManager
 from .retriever import CivilComplaintRetriever
@@ -348,13 +348,14 @@ class vLLMEngineManager:
         query: str,
         index_types: List[IndexType],
         top_k_per_type: int = 2,
+        enable_hybrid_search: bool = True,
     ) -> List[SearchResult]:
         if not query.strip():
             return []
 
         collected: List[SearchResult] = []
 
-        if self.hybrid_engine:
+        if self.hybrid_engine and enable_hybrid_search:
 
             async def _search_index(index_type: IndexType) -> List[SearchResult]:
                 results_raw, _ = await self.hybrid_engine.search(
@@ -508,6 +509,7 @@ class vLLMEngineManager:
             search_results = await self._retrieve_search_results(
                 query,
                 [IndexType.CASE, IndexType.LAW, IndexType.MANUAL, IndexType.NOTICE],
+                enable_hybrid_search=effective_flags.enable_hybrid_search,
             )
 
         retrieved_cases = self._search_results_to_cases(search_results)
@@ -825,10 +827,7 @@ async def health():
         "indexes": index_summary,
         "bm25_indexes": bm25_summary,
         "hybrid_search_enabled": manager.hybrid_engine is not None,
-        "feature_flags": {
-            "use_rag_pipeline": manager.feature_flags.use_rag_pipeline,
-            "model_version": manager.feature_flags.model_version,
-        },
+        "feature_flags": manager.feature_flags.to_public_dict(),
         "session_store": {
             "driver": "sqlite",
             "path": manager.session_store.db_path,
@@ -848,7 +847,32 @@ def _rate_limit(limit_string: str):
 
 def get_feature_flags(request: Request) -> FeatureFlags:
     header = request.headers.get("X-Feature-Flag")
-    return manager.feature_flags.override_from_header(header)
+    user_id = request.headers.get("X-User-Id")
+    return manager.feature_flags.for_user(user_id).override_from_header(header)
+
+
+@app.get("/v1/experiments/assignments")
+async def experiment_assignments(
+    request: Request,
+    _: None = Depends(verify_api_key),
+):
+    user_id = request.headers.get("X-User-Id") or request.query_params.get("user_id") or "anonymous"
+    assignments = assign_all_experiments(user_id)
+    events = [
+        track_experiment_exposure(
+            assignment,
+            metadata={"path": "/v1/experiments/assignments"},
+        )
+        for assignment in assignments.values()
+    ]
+    return {
+        "user_id": user_id,
+        "assignments": {
+            experiment_key: asdict(assignment)
+            for experiment_key, assignment in assignments.items()
+        },
+        "events_tracked": len(events),
+    }
 
 
 @app.post("/v1/generate-civil-response", response_model=GenerateCivilResponseResponse)
@@ -913,6 +937,8 @@ async def stream_generate(
     _: None = Depends(verify_api_key),
     flags: FeatureFlags = Depends(get_feature_flags),
 ):
+    if not flags.enable_streaming_response:
+        raise HTTPException(status_code=403, detail="스트리밍 응답 기능이 비활성화되어 있습니다.")
     if not request.stream:
         request.stream = True
 
@@ -946,10 +972,15 @@ async def stream_generate(
 @app.post("/v1/search", response_model=SearchResponse)
 @app.post("/search", response_model=SearchResponse)
 @_rate_limit("60/minute")
-async def search(request: SearchRequest, _: Request, __: None = Depends(verify_api_key)):
+async def search(
+    request: SearchRequest,
+    _: Request,
+    __: None = Depends(verify_api_key),
+    flags: FeatureFlags = Depends(get_feature_flags),
+):
     start_time = time.monotonic()
     try:
-        if manager.hybrid_engine:
+        if manager.hybrid_engine and flags.enable_hybrid_search:
             results_raw, actual_mode = await manager.hybrid_engine.search(
                 query=request.query,
                 index_type=request.doc_type,
@@ -1031,7 +1062,10 @@ def _trace_to_schema(trace: AgentTrace) -> AgentTraceSchema:
 async def agent_run(
     request: AgentRunRequest,
     _: None = Depends(verify_api_key),
+    flags: FeatureFlags = Depends(get_feature_flags),
 ):
+    if not flags.enable_agent_tools:
+        raise HTTPException(status_code=403, detail="에이전트 도구 기능이 비활성화되어 있습니다.")
     if not manager.agent_loop:
         raise HTTPException(status_code=503, detail="에이전트 루프가 초기화되지 않았습니다.")
     if request.stream:
@@ -1071,7 +1105,12 @@ async def agent_run(
 async def agent_stream(
     request: AgentRunRequest,
     _: None = Depends(verify_api_key),
+    flags: FeatureFlags = Depends(get_feature_flags),
 ):
+    if not flags.enable_agent_tools:
+        raise HTTPException(status_code=403, detail="에이전트 도구 기능이 비활성화되어 있습니다.")
+    if not flags.enable_streaming_response:
+        raise HTTPException(status_code=403, detail="스트리밍 응답 기능이 비활성화되어 있습니다.")
     if not manager.agent_loop:
         raise HTTPException(status_code=503, detail="에이전트 루프가 초기화되지 않았습니다.")
 

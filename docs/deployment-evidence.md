@@ -87,3 +87,14 @@ Verified health response:
 | Snyk report | Uploaded as `npm-security-reports` workflow artifact when `SNYK_TOKEN` is configured; otherwise the workflow records Snyk as skipped. |
 | Issue automation | Opens or updates a GitHub issue when npm audit or Snyk reports vulnerabilities. |
 
+## Feature Flags, Experiments, and Canary Rollout
+
+| Requirement | Evidence |
+|---|---|
+| Feature flag code | `GovOn/src/inference/feature_flags.py` |
+| Feature flags | `USE_RAG_PIPELINE`, `ENABLE_HYBRID_SEARCH`, `ENABLE_AGENT_TOOLS`, `ENABLE_STREAMING_RESPONSE` |
+| Target user toggles | Per-flag `*_TARGET_USERS` and `*_DISABLED_USERS` environment variables resolved from `X-User-Id`. |
+| A/B experiments | `complaint_response_layout` and `answer_tone`, each with two variants and stable SHA-256 user assignment. |
+| Experiment event log | `docs/experiments/feature-flag-experiment-log.jsonl` |
+| Canary rollout config | `GovOn/config/canary-rollout.yml` |
+| Canary verification | `GovOn/tests/test_inference/test_feature_flags.py` validates `1% -> 10% -> 50% -> 100%` advance and failed-health rollback to `0%`. |
