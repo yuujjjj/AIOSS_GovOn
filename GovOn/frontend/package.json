@@ -37,7 +37,7 @@
     }
   },
   "dependencies": {
-    "next": "16.2.9",
+    "next": "16.2.10",
     "react": "19.2.7",
     "react-dom": "19.2.7"
   },
@@ -51,12 +51,12 @@
     "@types/react-dom": "^19",
     "@vitest/coverage-v8": "^4.1.9",
     "eslint": "^9",
-    "eslint-config-next": "16.2.9",
+    "eslint-config-next": "16.2.10",
     "eslint-config-prettier": "^10.1.8",
     "husky": "^9.1.7",
     "jsdom": "^29.1.1",
     "lint-staged": "^16.4.0",
-    "prettier": "^3.9.1",
+    "prettier": "^3.9.4",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.1.7"
