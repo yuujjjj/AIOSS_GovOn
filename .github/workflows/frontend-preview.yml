@@ -140,7 +140,7 @@ jobs:
 
       - name: Comment preview URL
         if: steps.vercel.outputs.available == 'true' && github.event_name == 'pull_request'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const marker = '<!-- govon-frontend-preview -->';
