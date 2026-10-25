@@ -106,7 +106,7 @@ jobs:
 
       - name: Create or update security issue
         if: ${{ always() && (steps.npm-audit.outputs.total != '0' || steps.snyk.outputs.total != '0') }}
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const title = "Automated npm/Snyk security scan";
